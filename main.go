@@ -35,10 +35,8 @@ func main() {
 	}
 
 	subMgr := sub.NewManager()
-	reg := registry.New()
-	authBr := auth.NewBridge(reg, cfg.WorkerSecret)
-	wsHdlr := ws.NewHandler(authBr, subMgr, reg)
 
+	var reg registry.Registry
 	var pub cluster.Publisher
 	var rp *cluster.RedisPublisher
 	if cfg.RedisURL != "" {
@@ -46,14 +44,20 @@ func main() {
 		rp, err = cluster.NewRedisPublisher(cfg.RedisURL, subMgr)
 		if err != nil {
 			log.Printf("cluster: redis unavailable, falling back to single-instance: %v", err)
+			reg = registry.New()
 			pub = cluster.NewNoopPublisher(subMgr)
 		} else {
 			log.Printf("cluster: redis pub/sub active (%s)", cfg.RedisURL)
+			reg = cluster.NewRedisRegistry(rp.Client(), rp.Context())
 			pub = rp
 		}
 	} else {
+		reg = registry.New()
 		pub = cluster.NewNoopPublisher(subMgr)
 	}
+
+	authBr := auth.NewBridge(reg, cfg.WorkerSecret)
+	wsHdlr := ws.NewHandler(authBr, subMgr, reg)
 
 	apiSvr := api.NewServer(subMgr, pub, reg, cfg.WorkerSecret, version)
 

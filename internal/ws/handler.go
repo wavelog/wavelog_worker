@@ -62,10 +62,10 @@ func (c *Client) Send(payload json.RawMessage) {
 type Handler struct {
 	auth *auth.Bridge
 	sub  *sub.Manager
-	reg  *registry.Registry
+	reg  registry.Registry
 }
 
-func NewHandler(a *auth.Bridge, s *sub.Manager, reg *registry.Registry) *Handler {
+func NewHandler(a *auth.Bridge, s *sub.Manager, reg registry.Registry) *Handler {
 	return &Handler{auth: a, sub: s, reg: reg}
 }
 

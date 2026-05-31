@@ -6,11 +6,11 @@ import (
 )
 
 type Bridge struct {
-	reg    *registry.Registry
+	reg    registry.Registry
 	secret string
 }
 
-func NewBridge(reg *registry.Registry, secret string) *Bridge {
+func NewBridge(reg registry.Registry, secret string) *Bridge {
 	return &Bridge{reg: reg, secret: secret}
 }
 

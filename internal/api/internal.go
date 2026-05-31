@@ -38,13 +38,13 @@ type unregisterRequest struct {
 type Server struct {
 	sub     *sub.Manager
 	pub     cluster.Publisher
-	reg     *registry.Registry
+	reg     registry.Registry
 	secret  string
 	version string
 	started time.Time
 }
 
-func NewServer(s *sub.Manager, pub cluster.Publisher, reg *registry.Registry, secret, version string) *Server {
+func NewServer(s *sub.Manager, pub cluster.Publisher, reg registry.Registry, secret, version string) *Server {
 	return &Server{sub: s, pub: pub, reg: reg, secret: secret, version: version, started: time.Now()}
 }
 

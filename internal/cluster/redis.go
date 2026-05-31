@@ -140,6 +140,9 @@ func (r *RedisPublisher) ClusterNodes() int {
 	return int(res[redisChannel])
 }
 
+func (r *RedisPublisher) Client() *redis.Client       { return r.client }
+func (r *RedisPublisher) Context() context.Context    { return r.ctx }
+
 // Close shuts down the subscriber goroutine and the Redis connection.
 func (r *RedisPublisher) Close() {
 	r.cancel()

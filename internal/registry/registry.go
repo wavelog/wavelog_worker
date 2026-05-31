@@ -7,39 +7,46 @@ type TopicMeta struct {
 	RequireToken bool `json:"require_token"`
 }
 
-// Registry is a thread-safe in-memory store of registered topics.
+// Registry is the interface for topic storage — in-memory (single-instance)
+// or Redis-backed (cluster mode).
+type Registry interface {
+	Register(topic string, meta TopicMeta)
+	Unregister(topic string)
+	Lookup(topic string) (TopicMeta, bool)
+	Topics() []string
+}
+
+// MemRegistry is a thread-safe in-memory Registry.
 // State is lost on Worker restart; PHP re-registers via publish 404-retry or page reload.
-type Registry struct {
+type MemRegistry struct {
 	mu     sync.RWMutex
 	topics map[string]TopicMeta
 }
 
-func New() *Registry {
-	return &Registry{topics: make(map[string]TopicMeta)}
+func New() *MemRegistry {
+	return &MemRegistry{topics: make(map[string]TopicMeta)}
 }
 
-func (r *Registry) Register(topic string, meta TopicMeta) {
+func (r *MemRegistry) Register(topic string, meta TopicMeta) {
 	r.mu.Lock()
 	r.topics[topic] = meta
 	r.mu.Unlock()
 }
 
-func (r *Registry) Unregister(topic string) {
+func (r *MemRegistry) Unregister(topic string) {
 	r.mu.Lock()
 	delete(r.topics, topic)
 	r.mu.Unlock()
 }
 
-// Lookup returns (meta, true) if the topic is known, (zero, false) otherwise.
-func (r *Registry) Lookup(topic string) (TopicMeta, bool) {
+func (r *MemRegistry) Lookup(topic string) (TopicMeta, bool) {
 	r.mu.RLock()
 	meta, ok := r.topics[topic]
 	r.mu.RUnlock()
 	return meta, ok
 }
 
-// Topics returns all currently registered topic names.
-func (r *Registry) Topics() []string {
+func (r *MemRegistry) Topics() []string {
 	r.mu.RLock()
 	out := make([]string, 0, len(r.topics))
 	for t := range r.topics {
