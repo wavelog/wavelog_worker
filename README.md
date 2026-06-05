@@ -1,5 +1,6 @@
 > [!IMPORTANT]
-> This project is still under development. Do NOT use in production
+> This project is still under development. Do NOT use in production.
+> Currently only the new Contesting supports this which is also still in development (https://github.com/wavelog/wavelog/pull/3063)
 
 # Wavelog Worker
 
