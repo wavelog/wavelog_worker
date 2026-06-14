@@ -3,12 +3,15 @@ DIST    := dist
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
-.PHONY: build build-all clean \
+.PHONY: build build-all clean test \
         build-linux-amd64 build-linux-arm64 build-linux-arm
 
 build:
 	mkdir -p $(DIST)
 	go build $(LDFLAGS) -o $(DIST)/$(BINARY) .
+
+test:
+	go test -race ./...
 
 build-all: build-linux-amd64 build-linux-arm64 build-linux-arm
 
