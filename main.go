@@ -3,11 +3,12 @@ package main
 import (
 	"context"
 	"flag"
-	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -65,24 +66,24 @@ func main() {
 	wsMux.Handle("/ws", wsHdlr)
 
 	wsServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.WSPort),
+		Addr:    net.JoinHostPort(cfg.WSBind, strconv.Itoa(cfg.WSPort)),
 		Handler: wsMux,
 	}
 	internalServer := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.InternalPort),
+		Addr:    net.JoinHostPort(cfg.InternalBind, strconv.Itoa(cfg.InternalPort)),
 		Handler: apiSvr.Handler(),
 	}
 
 	log.Printf("welcome to the wavelog worker (version %s)", version)
 
 	go func() {
-		log.Printf("ws server listening on :%d", cfg.WSPort)
+		log.Printf("ws server listening on %s", wsServer.Addr)
 		if err := wsServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("ws server: %v", err)
 		}
 	}()
 	go func() {
-		log.Printf("internal server listening on :%d", cfg.InternalPort)
+		log.Printf("internal server listening on %s", internalServer.Addr)
 		if err := internalServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("internal server: %v", err)
 		}

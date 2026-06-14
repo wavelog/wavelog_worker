@@ -255,6 +255,12 @@ ws_port: 9000        # browser-facing (public, optionally behind reverse proxy)
 internal_port: 9001  # PHP-facing (internal only!)
 worker_secret: ""    # min. 32 characters, generate with: openssl rand -hex 32
 
+# Bind addresses (optional): restrict each listener to a specific IP.
+# Empty or omitted = listen on all interfaces (0.0.0.0 + ::).
+# Recommended: bind the internal port to localhost when PHP runs on the same host.
+# ws_bind: "0.0.0.0"
+# internal_bind: "127.0.0.1"
+
 # Cluster mode (optional): connect multiple instances via Redis Pub/Sub.
 # Leave empty or omit for single-instance mode.
 # redis_url: "redis://localhost:6379/2"
@@ -312,7 +318,13 @@ PHP publishes to the first URL. Redis distributes the event to the other nodes.
 ./wavelog_worker -config /etc/wavelog_worker/config.yaml
 ```
 
-Restrict port 9001 to localhost via firewall:
+Restrict the internal port to localhost. The simplest way is to bind it directly in `config.yaml`:
+
+```yaml
+internal_bind: "127.0.0.1"
+```
+
+Alternatively (or additionally) enforce it via firewall:
 
 ```bash
 iptables -A INPUT -p tcp --dport 9001 ! -s 127.0.0.1 -j DROP

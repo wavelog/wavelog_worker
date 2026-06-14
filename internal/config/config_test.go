@@ -17,7 +17,9 @@ func writeTemp(t *testing.T, content string) string {
 
 func TestLoadValid(t *testing.T) {
 	p := writeTemp(t, `
+ws_bind: "0.0.0.0"
 ws_port: 8000
+internal_bind: "127.0.0.1"
 internal_port: 8001
 worker_secret: "supersecret"
 redis_url: "redis://localhost:6379/0"
@@ -28,6 +30,9 @@ redis_url: "redis://localhost:6379/0"
 	}
 	if cfg.WSPort != 8000 || cfg.InternalPort != 8001 {
 		t.Errorf("ports: got %d/%d", cfg.WSPort, cfg.InternalPort)
+	}
+	if cfg.WSBind != "0.0.0.0" || cfg.InternalBind != "127.0.0.1" {
+		t.Errorf("binds: got %q/%q", cfg.WSBind, cfg.InternalBind)
 	}
 	if cfg.WorkerSecret != "supersecret" {
 		t.Errorf("worker_secret: got %q", cfg.WorkerSecret)
@@ -52,6 +57,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.RedisURL != "" {
 		t.Errorf("RedisURL should be empty, got %q", cfg.RedisURL)
+	}
+	if cfg.WSBind != "" || cfg.InternalBind != "" {
+		t.Errorf("binds should default to empty (all interfaces), got %q/%q", cfg.WSBind, cfg.InternalBind)
 	}
 }
 

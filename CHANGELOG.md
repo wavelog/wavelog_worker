@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-06-14
+
+### Added
+- Optional `ws_bind` / `internal_bind` config options to restrict each listener to a specific IP. Empty/omitted keeps the previous behaviour (all interfaces). (by @HB9HIL)
+
 ## [0.0.2] - 2026-06-14
 
 ### Added

@@ -1,6 +1,11 @@
 ws_port: 9000
 internal_port: 9001
 
+# Optional: bind addresses. Empty/omitted = listen on all interfaces (0.0.0.0 + ::).
+# Tip: restrict the internal API (carries worker_secret) to localhost.
+# ws_bind: "0.0.0.0"
+# internal_bind: "127.0.0.1"
+
 # Shared secret — must match worker_secret in Wavelog's worker.php config.
 # Minimum 32 characters, Recommended: 64 characters. Generate with: openssl rand -hex 32
 worker_secret: ""
