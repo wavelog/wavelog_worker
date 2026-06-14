@@ -1,0 +1,92 @@
+name: Create release on tag push
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Extract release notes from CHANGELOG
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v ver="$version" '
+            /^## \[/ {
+              if (found) exit
+              if (index($0, "[" ver "]")) { found=1; next }
+            }
+            found { print }
+          ' CHANGELOG.md > release_notes.md
+          if [ ! -s release_notes.md ]; then
+            echo "::error::No changelog section found for version $version"
+            exit 1
+          fi
+      - name: Upload release notes
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-notes
+          path: release_notes.md
+
+  build:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: build-linux-amd64
+            binary: wavelog_worker-amd64
+          - runner: ubuntu-24.04-arm
+            target: build-linux-arm64
+            binary: wavelog_worker-arm64
+          - runner: ubuntu-24.04-arm
+            target: build-linux-arm
+            binary: wavelog_worker-armv7
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build binary
+        run: make ${{ matrix.target }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: dist/${{ matrix.binary }}
+
+  release:
+    needs: [build, docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: wavelog_worker-*
+          merge-multiple: true
+      - name: Download release notes
+        uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release_notes.md
+          files: dist/*
+
+  docker:
+    needs: check
+    uses: ./.github/workflows/docker-image.yml
+    permissions:
+      contents: read
+      packages: write
