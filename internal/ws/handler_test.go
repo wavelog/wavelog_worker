@@ -46,7 +46,7 @@ func (e *testEnv) wsURL(topicQuery string) string {
 
 func validToken(t *testing.T) string {
 	t.Helper()
-	tok, err := wlhmac.Sign(wlhmac.Claims{UserID: 1, Expires: time.Now().Add(time.Hour).Unix()}, secret)
+	tok, err := wlhmac.Sign(wlhmac.Claims{UserID: 1, Topic: "t", Expires: time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}

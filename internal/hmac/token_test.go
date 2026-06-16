@@ -10,7 +10,7 @@ import (
 const testSecret = "test-secret-at-least-32-chars-long!!"
 
 func TestSignVerifyRoundtrip(t *testing.T) {
-	claims := Claims{UserID: 42, SessionID: 7, Expires: time.Now().Add(time.Hour).Unix()}
+	claims := Claims{UserID: 42, Topic: "contest_session.7", Expires: time.Now().Add(time.Hour).Unix()}
 
 	token, err := Sign(claims, testSecret)
 	if err != nil {

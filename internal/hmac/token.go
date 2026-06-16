@@ -11,10 +11,14 @@ import (
 )
 
 // Claims is the payload embedded in a signed token.
+//
+// Topic binds the token to exactly one topic. The worker must compare it against
+// the topic the client tries to subscribe to — a valid signature alone does not
+// authorize access to an arbitrary topic.
 type Claims struct {
-	UserID    int   `json:"user_id"`
-	SessionID int   `json:"session_id"`
-	Expires   int64 `json:"expires"` // Unix timestamp
+	UserID  int    `json:"user_id"`
+	Topic   string `json:"topic"`
+	Expires int64  `json:"expires"` // Unix timestamp
 }
 
 // Sign produces a URL-safe token: base64url(json(claims)).hex(hmac-sha256).

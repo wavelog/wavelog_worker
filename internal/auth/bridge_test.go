@@ -10,9 +10,10 @@ import (
 
 const secret = "test-secret-at-least-32-chars-long!!"
 
-func validToken(t *testing.T) string {
+// tokenFor mints a valid token bound to the given topic.
+func tokenFor(t *testing.T, topic string) string {
 	t.Helper()
-	tok, err := wlhmac.Sign(wlhmac.Claims{UserID: 1, Expires: time.Now().Add(time.Hour).Unix()}, secret)
+	tok, err := wlhmac.Sign(wlhmac.Claims{UserID: 1, Topic: topic, Expires: time.Now().Add(time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
@@ -21,7 +22,7 @@ func validToken(t *testing.T) string {
 
 func TestValidateUnknownTopic(t *testing.T) {
 	b := NewBridge(registry.New(), secret)
-	if b.Validate("nope", validToken(t)) {
+	if b.Validate("nope", tokenFor(t, "nope")) {
 		t.Fatal("unknown topic must not validate")
 	}
 }
@@ -45,7 +46,7 @@ func TestValidateTokenRequired(t *testing.T) {
 	reg.Register("secure", registry.TopicMeta{RequireToken: true})
 	b := NewBridge(reg, secret)
 
-	if !b.Validate("secure", validToken(t)) {
+	if !b.Validate("secure", tokenFor(t, "secure")) {
 		t.Fatal("valid token should validate")
 	}
 	if b.Validate("secure", "invalid-token") {
@@ -56,11 +57,33 @@ func TestValidateTokenRequired(t *testing.T) {
 	}
 
 	// Expired token must be rejected.
-	expired, err := wlhmac.Sign(wlhmac.Claims{UserID: 1, Expires: time.Now().Add(-time.Hour).Unix()}, secret)
+	expired, err := wlhmac.Sign(wlhmac.Claims{UserID: 1, Topic: "secure", Expires: time.Now().Add(-time.Hour).Unix()}, secret)
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
 	if b.Validate("secure", expired) {
 		t.Fatal("expired token must not validate")
+	}
+}
+
+// A validly-signed token for one topic must not grant access to another topic.
+func TestValidateTokenTopicMismatch(t *testing.T) {
+	reg := registry.New()
+	reg.Register("contest_session.100", registry.TopicMeta{RequireToken: true})
+	reg.Register("contest_session.999", registry.TopicMeta{RequireToken: true})
+	reg.Register("radio.5", registry.TopicMeta{RequireToken: true})
+	b := NewBridge(reg, secret)
+
+	// Token minted for the attacker's own session.
+	own := tokenFor(t, "contest_session.100")
+
+	if !b.Validate("contest_session.100", own) {
+		t.Fatal("token must validate for its own topic")
+	}
+	if b.Validate("contest_session.999", own) {
+		t.Fatal("token for one contest session must not validate for another")
+	}
+	if b.Validate("radio.5", own) {
+		t.Fatal("contest-session token must not validate for a radio topic")
 	}
 }
