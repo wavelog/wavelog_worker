@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed:
+- Binding the HMAC Token to a topic instead to a user id. This allows better verification of permission in the PHP backend. (by @HB9HIL)
+
 ## [0.0.4] - 2026-06-15
 
 ### Added
