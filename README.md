@@ -256,8 +256,10 @@ internal_port: 9001  # PHP-facing (internal only!)
 worker_secret: ""    # min. 32 characters, generate with: openssl rand -hex 32
 
 # Bind addresses (optional): restrict each listener to a specific IP.
-# Empty or omitted = listen on all interfaces (0.0.0.0 + ::).
-# Recommended: bind the internal port to localhost when PHP runs on the same host.
+# ws_bind:       empty or omitted = listen on all interfaces (0.0.0.0 + ::).
+# internal_bind: defaults to 127.0.0.1 (the internal port carries the
+#                worker_secret). Only widen it if PHP runs on another
+#                host/container and firewall it in that case.
 # ws_bind: "0.0.0.0"
 # internal_bind: "127.0.0.1"
 

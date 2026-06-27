@@ -58,8 +58,11 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.RedisURL != "" {
 		t.Errorf("RedisURL should be empty, got %q", cfg.RedisURL)
 	}
-	if cfg.WSBind != "" || cfg.InternalBind != "" {
-		t.Errorf("binds should default to empty (all interfaces), got %q/%q", cfg.WSBind, cfg.InternalBind)
+	if cfg.WSBind != "" {
+		t.Errorf("WSBind should default to empty (all interfaces), got %q", cfg.WSBind)
+	}
+	if cfg.InternalBind != "127.0.0.1" {
+		t.Errorf("InternalBind should default to 127.0.0.1, got %q", cfg.InternalBind)
 	}
 }
 

@@ -1,8 +1,16 @@
 ws_port: 9000
 internal_port: 9001
 
-# Optional: bind addresses. Empty/omitted = listen on all interfaces (0.0.0.0 + ::).
-# Tip: restrict the internal API (carries worker_secret) to localhost.
+# Optional: bind addresses.
+# ws_bind:       empty/omitted = listen on all interfaces (0.0.0.0 + ::).
+# internal_bind: defaults to 127.0.0.1 — the internal API carries the
+#                worker_secret and should stay on localhost. Only widen this
+#                (e.g. "0.0.0.0") if PHP runs on another host/container, and
+#                protect it with the network/firewall in that case.
+#                
+#                Important: If you run the Wavelog Worker in Docker you need to set internal_bind to "0.0.0.0"
+#                to allow Wavelog to reach the internal API. The Docker network isolation protects it. 
+#
 # ws_bind: "0.0.0.0"
 # internal_bind: "127.0.0.1"
 

@@ -22,6 +22,7 @@ func Load(p string) (*Config, error) {
 	}
 	cfg := &Config{
 		WSPort:       9000,
+		InternalBind: "127.0.0.1", // internal API carries the worker_secret — default to localhost
 		InternalPort: 9001,
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
