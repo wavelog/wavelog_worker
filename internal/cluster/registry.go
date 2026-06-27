@@ -63,14 +63,17 @@ func (r *RedisRegistry) Lookup(topic string) (registry.TopicMeta, bool) {
 }
 
 func (r *RedisRegistry) Topics() []string {
-	keys, err := r.client.Keys(r.ctx, topicKeyPrefix+"*").Result()
-	if err != nil {
-		log.Printf("registry: redis KEYS: %v", err)
-		return nil
+	// SCAN instead of KEYS: KEYS blocks the Redis server for the whole scan
+	// (O(N) over the entire keyspace), which a large keyspace turns into a DoS.
+	// SCAN iterates incrementally without blocking other clients.
+	var topics []string
+	iter := r.client.Scan(r.ctx, 0, topicKeyPrefix+"*", 0).Iterator()
+	for iter.Next(r.ctx) {
+		topics = append(topics, strings.TrimPrefix(iter.Val(), topicKeyPrefix))
 	}
-	topics := make([]string, len(keys))
-	for i, k := range keys {
-		topics[i] = strings.TrimPrefix(k, topicKeyPrefix)
+	if err := iter.Err(); err != nil {
+		log.Printf("registry: redis SCAN: %v", err)
+		return nil
 	}
 	return topics
 }
