@@ -165,3 +165,40 @@ func TestFirstFrameNotAuth(t *testing.T) {
 		t.Fatalf("expected error/auth_required, got %+v", f)
 	}
 }
+
+func TestClientIPCleanHeaders(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		value  string
+		want   string
+	}{
+		{"clean v4", "X-Forwarded-For", "203.0.113.7", "203.0.113.7"},
+		{"xff list takes first", "X-Forwarded-For", "203.0.113.7, 10.0.0.1", "203.0.113.7"},
+		{"clean v6", "X-Real-IP", "2001:db8::1", "2001:db8::1"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/ws?topic=t", nil)
+			r.Header.Set(tc.header, tc.value)
+			if got := clientIP(r); got != tc.want {
+				t.Fatalf("clientIP = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// A forged proxy header must never carry CR/LF (or other control chars) into a
+// log line. We don't assert the exact mangled output, only that the dangerous
+// characters are gone.
+func TestClientIPStripsLogInjection(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "/ws?topic=t", nil)
+	r.Header.Set("X-Real-IP", "1.2.3.4\r\nFATAL forged log line\x00")
+	got := clientIP(r)
+	if strings.ContainsAny(got, "\r\n\x00") {
+		t.Fatalf("clientIP leaked control chars: %q", got)
+	}
+	if !strings.HasPrefix(got, "1.2.3.4") {
+		t.Fatalf("clientIP dropped the real address: %q", got)
+	}
+}

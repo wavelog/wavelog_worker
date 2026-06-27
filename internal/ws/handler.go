@@ -213,14 +213,37 @@ func mustMarshal(v any) []byte {
 // clientIP returns the originating client address, preferring the
 // X-Forwarded-For / X-Real-IP headers set by a reverse proxy over
 // r.RemoteAddr (which would otherwise show the proxy's address).
+//
+// The header values are attacker-controlled (any client can send them), so the
+// result is sanitized before it reaches the logs to prevent log injection.
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		if ip := strings.TrimSpace(strings.Split(xff, ",")[0]); ip != "" {
-			return ip
+			return sanitizeIP(ip)
 		}
 	}
 	if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-		return xrip
+		return sanitizeIP(strings.TrimSpace(xrip))
 	}
 	return r.RemoteAddr
+}
+
+// sanitizeIP strips characters that don't belong in an IP/host so a forged
+// proxy header cannot inject newlines or control characters into log lines.
+// Anything unexpected is replaced and the result is length-capped.
+func sanitizeIP(s string) string {
+	if len(s) > 64 {
+		s = s[:64]
+	}
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r >= '0' && r <= '9',
+			r >= 'a' && r <= 'f',
+			r >= 'A' && r <= 'F',
+			r == '.' || r == ':' || r == '%': // IPv4, IPv6, zone id
+			return r
+		default:
+			return '?'
+		}
+	}, s)
 }
