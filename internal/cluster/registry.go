@@ -5,16 +5,12 @@ import (
 	"encoding/json"
 	"log"
 	"strings"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/wavelog/wavelog_worker/internal/registry"
 )
 
-const (
-	topicKeyPrefix = "wavelog:topic:"
-	topicTTL       = 24 * time.Hour
-)
+const topicKeyPrefix = "wavelog:topic:"
 
 // RedisRegistry stores topic registrations in Redis so all cluster nodes share
 // the same registry state. Topics expire automatically after 24h (refreshed on
@@ -34,7 +30,7 @@ func (r *RedisRegistry) Register(topic string, meta registry.TopicMeta) {
 		log.Printf("registry: marshal meta for %q: %v", topic, err)
 		return
 	}
-	if err := r.client.Set(r.ctx, topicKeyPrefix+topic, val, topicTTL).Err(); err != nil {
+	if err := r.client.Set(r.ctx, topicKeyPrefix+topic, val, registry.DefaultTTL).Err(); err != nil {
 		log.Printf("registry: redis SET %q: %v", topic, err)
 	}
 }

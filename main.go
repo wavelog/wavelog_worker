@@ -34,6 +34,10 @@ func main() {
 	if len(cfg.WorkerSecret) < 32 {
 		log.Fatalf("config: worker_secret must be at least 32 characters")
 	}
+	if cfg.TopicTTL > 0 {
+		registry.DefaultTTL = cfg.TopicTTL
+		log.Printf("config: topic TTL set to %s", cfg.TopicTTL)
+	}
 
 	subMgr := sub.NewManager()
 

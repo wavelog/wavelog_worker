@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -13,6 +15,11 @@ type Config struct {
 	InternalPort int    `yaml:"internal_port"`
 	WorkerSecret string `yaml:"worker_secret"`
 	RedisURL     string `yaml:"redis_url"` // optional, empty = single-instance mode
+
+	// TopicTTL is the parsed idle window after which a registered topic expires.
+	// Zero means "unset" — the caller keeps registry.DefaultTTL (24h).
+	TopicTTL    time.Duration `yaml:"-"`
+	RawTopicTTL string        `yaml:"topic_ttl"` // human duration, e.g. "24h"; empty = default
 }
 
 func Load(p string) (*Config, error) {
@@ -27,6 +34,16 @@ func Load(p string) (*Config, error) {
 	}
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, err
+	}
+	if cfg.RawTopicTTL != "" {
+		d, err := time.ParseDuration(cfg.RawTopicTTL)
+		if err != nil {
+			return nil, fmt.Errorf("config: invalid topic_ttl %q: %w", cfg.RawTopicTTL, err)
+		}
+		if d <= 0 {
+			return nil, fmt.Errorf("config: topic_ttl must be positive, got %q", cfg.RawTopicTTL)
+		}
+		cfg.TopicTTL = d
 	}
 	return cfg, nil
 }

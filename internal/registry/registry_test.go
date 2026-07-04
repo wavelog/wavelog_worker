@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestMemRegistryRegisterLookup(t *testing.T) {
@@ -61,6 +62,69 @@ func TestMemRegistryTopics(t *testing.T) {
 	sort.Strings(got)
 	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
 		t.Fatalf("unexpected topics: %v", got)
+	}
+}
+
+func TestMemRegistryLookupExpired(t *testing.T) {
+	r := New()
+	r.Register("t", TopicMeta{RequireToken: true})
+
+	// Force the entry to have expired in the past.
+	r.mu.Lock()
+	e := r.topics["t"]
+	e.expiresAt = time.Now().Add(-time.Minute)
+	r.topics["t"] = e
+	r.mu.Unlock()
+
+	if _, ok := r.Lookup("t"); ok {
+		t.Fatal("expired topic must not be found by Lookup")
+	}
+	if got := r.Topics(); len(got) != 0 {
+		t.Fatalf("expired topic must not appear in Topics, got %v", got)
+	}
+}
+
+func TestMemRegistryReap(t *testing.T) {
+	r := New()
+	r.ttl = time.Hour
+	r.Register("fresh", TopicMeta{})
+
+	// A stale entry whose expiry is already in the past.
+	r.mu.Lock()
+	r.topics["stale"] = entry{expiresAt: time.Now().Add(-time.Hour)}
+	r.mu.Unlock()
+
+	r.reap(time.Now())
+
+	r.mu.RLock()
+	_, staleOK := r.topics["stale"]
+	_, freshOK := r.topics["fresh"]
+	r.mu.RUnlock()
+	if staleOK {
+		t.Error("reap should have deleted the stale topic")
+	}
+	if !freshOK {
+		t.Error("reap must keep the fresh topic")
+	}
+}
+
+func TestMemRegistryReRegisterRefreshesTTL(t *testing.T) {
+	r := New()
+	r.Register("t", TopicMeta{})
+
+	r.mu.RLock()
+	first := r.topics["t"].expiresAt
+	r.mu.RUnlock()
+
+	time.Sleep(time.Millisecond)
+	r.Register("t", TopicMeta{})
+
+	r.mu.RLock()
+	second := r.topics["t"].expiresAt
+	r.mu.RUnlock()
+
+	if !second.After(first) {
+		t.Fatalf("re-register should push expiry forward: first=%v second=%v", first, second)
 	}
 }
 

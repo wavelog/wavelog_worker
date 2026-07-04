@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func writeTemp(t *testing.T, content string) string {
@@ -63,6 +64,41 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.InternalBind != "127.0.0.1" {
 		t.Errorf("InternalBind should default to 127.0.0.1, got %q", cfg.InternalBind)
+	}
+}
+
+func TestLoadTopicTTL(t *testing.T) {
+	p := writeTemp(t, `
+worker_secret: "x"
+topic_ttl: "12h"
+`)
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TopicTTL != 12*time.Hour {
+		t.Errorf("TopicTTL: got %s, want 12h", cfg.TopicTTL)
+	}
+}
+
+func TestLoadTopicTTLDefaultUnset(t *testing.T) {
+	// Unset topic_ttl leaves TopicTTL at zero so the caller keeps its default.
+	p := writeTemp(t, `worker_secret: "x"`)
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.TopicTTL != 0 {
+		t.Errorf("TopicTTL should be zero when unset, got %s", cfg.TopicTTL)
+	}
+}
+
+func TestLoadTopicTTLInvalid(t *testing.T) {
+	if _, err := Load(writeTemp(t, "topic_ttl: \"nonsense\"")); err == nil {
+		t.Fatal("expected error for malformed topic_ttl")
+	}
+	if _, err := Load(writeTemp(t, "topic_ttl: \"-5h\"")); err == nil {
+		t.Fatal("expected error for non-positive topic_ttl")
 	}
 }
 

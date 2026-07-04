@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-07-04
+
+### Fixed
+- Fixed memory leak in MemRegistry (single mode) where topics never go cleaned up. RedisRegistry (cluster mode) already had the 24h TTL. Value can be configured if necessary via the `topic_ttl` config option. (by @HB9HIL)
+
 ## [0.1.0] - 2026-06-27
 
 ### Changed
