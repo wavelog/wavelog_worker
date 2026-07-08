@@ -61,8 +61,12 @@ func main() {
 		pub = cluster.NewNoopPublisher(subMgr)
 	}
 
+	// Reserve the live-status topic ourselves so the Debug page can subscribe to
+	// it without any PHP round-trip.
+	reg.Register(ws.StatusTopic, registry.TopicMeta{RequireToken: true})
+
 	authBr := auth.NewBridge(reg, cfg.WorkerSecret)
-	wsHdlr := ws.NewHandler(authBr, subMgr, reg)
+	wsHdlr := ws.NewHandler(authBr, subMgr, reg, pub, version, time.Now())
 
 	apiSvr := api.NewServer(subMgr, pub, reg, cfg.WorkerSecret, version)
 

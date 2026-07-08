@@ -11,9 +11,26 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/wavelog/wavelog_worker/internal/auth"
+	"github.com/wavelog/wavelog_worker/internal/cluster"
 	"github.com/wavelog/wavelog_worker/internal/registry"
 	"github.com/wavelog/wavelog_worker/internal/sub"
 )
+
+const StatusTopic = "worker.status"
+
+// statusMinInterval rate-limit
+const statusMinInterval = 700 * time.Millisecond
+
+type statusSnapshot struct {
+	Status           string `json:"status"`
+	Version          string `json:"version"`
+	Uptime           string `json:"uptime"`
+	UptimeSeconds    int    `json:"uptime_seconds"`
+	RegisteredTopics int    `json:"registered_topics"`
+	ActiveTopics     int    `json:"active_topics"`
+	Clients          int    `json:"connected_clients"`
+	ClusterNodes     int    `json:"cluster_nodes"` // -1 = single-instance mode
+}
 
 const (
 	pingInterval  = 30 * time.Second
@@ -51,10 +68,16 @@ type Client struct {
 	topic  string
 	mu     sync.Mutex
 	closed bool
+
+	statusFn   func() statusSnapshot
+	lastStatus time.Time
 }
 
 func (c *Client) Send(payload json.RawMessage) {
-	frame := outboundFrame{Type: "push", Payload: payload}
+	c.sendFrame(outboundFrame{Type: "push", Payload: payload})
+}
+
+func (c *Client) sendFrame(frame outboundFrame) {
 	data, err := json.Marshal(frame)
 	if err != nil {
 		return
@@ -82,13 +105,32 @@ func (c *Client) closeSend() {
 }
 
 type Handler struct {
-	auth *auth.Bridge
-	sub  *sub.Manager
-	reg  registry.Registry
+	auth    *auth.Bridge
+	sub     *sub.Manager
+	reg     registry.Registry
+	pub     cluster.Publisher
+	version string
+	started time.Time
 }
 
-func NewHandler(a *auth.Bridge, s *sub.Manager, reg registry.Registry) *Handler {
-	return &Handler{auth: a, sub: s, reg: reg}
+func NewHandler(a *auth.Bridge, s *sub.Manager, reg registry.Registry, pub cluster.Publisher, version string, started time.Time) *Handler {
+	return &Handler{auth: a, sub: s, reg: reg, pub: pub, version: version, started: started}
+}
+
+// buildStatus gathers the current live stats for the status feed.
+func (h *Handler) buildStatus() statusSnapshot {
+	active, clients := h.sub.Stats()
+	uptime := time.Since(h.started).Round(time.Second)
+	return statusSnapshot{
+		Status:           "ok",
+		Version:          h.version,
+		Uptime:           uptime.String(),
+		UptimeSeconds:    int(uptime.Seconds()),
+		RegisteredTopics: len(h.reg.Topics()),
+		ActiveTopics:     active,
+		Clients:          clients,
+		ClusterNodes:     h.pub.ClusterNodes(),
+	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -144,6 +186,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		send:  make(chan []byte, sendBuf),
 		topic: topic,
 	}
+	// Clients on the reserved status topic may pull live stats over the socket.
+	if topic == StatusTopic {
+		c.statusFn = h.buildStatus
+	}
 
 	h.sub.Subscribe(topic, c)
 	log.Printf("ip=%s -- ws: client connected topic=%s", ip, topic)
@@ -164,7 +210,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // readPump drains incoming frames and keeps the pong handler alive.
-// The worker is push-only — browser requests go directly to PHP via AJAX.
+// The worker is push-only with one exception: clients on the reserved status
+// topic may send {type:"status"} to pull a live stats snapshot over the same
+// connection. All other inbound frames are ignored (browser sync requests go to
+// PHP via AJAX).
 func (c *Client) readPump() {
 	c.conn.SetReadDeadline(time.Now().Add(readDeadline))
 	c.conn.SetPongHandler(func(string) error {
@@ -172,12 +221,27 @@ func (c *Client) readPump() {
 		return nil
 	})
 	for {
-		_, _, err := c.conn.ReadMessage()
+		_, msg, err := c.conn.ReadMessage()
 		if err != nil {
 			return
 		}
-		// All inbound frames (except the auth handshake above) are ignored.
-		// Browsers must not send requests over WS; use AJAX instead.
+		if c.statusFn == nil {
+			continue
+		}
+		var frame inboundFrame
+		if err := json.Unmarshal(msg, &frame); err != nil || frame.Type != "status" {
+			continue
+		}
+		// Throttle: ignore status requests that arrive faster than the minimum
+		// interval so a client cannot flood the worker with snapshot work.
+		if now := time.Now(); now.Sub(c.lastStatus) >= statusMinInterval {
+			c.lastStatus = now
+			snap, err := json.Marshal(c.statusFn())
+			if err != nil {
+				continue
+			}
+			c.sendFrame(outboundFrame{Type: "status", Payload: snap})
+		}
 	}
 }
 

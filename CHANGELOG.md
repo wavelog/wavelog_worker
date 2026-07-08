@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-08
+
+### Added
+- Added websocket status handler so healthchecks can be performed on the websocket listener. (by @HB9HIL)
+
 ### Changed
 - Strip the 'v' from the injected version in the docker image. (by @HB9HIL)
 

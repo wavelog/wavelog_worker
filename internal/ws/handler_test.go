@@ -10,6 +10,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/wavelog/wavelog_worker/internal/auth"
+	"github.com/wavelog/wavelog_worker/internal/cluster"
 	wlhmac "github.com/wavelog/wavelog_worker/internal/hmac"
 	"github.com/wavelog/wavelog_worker/internal/registry"
 	"github.com/wavelog/wavelog_worker/internal/sub"
@@ -28,7 +29,7 @@ func newEnv(t *testing.T) *testEnv {
 	reg := registry.New()
 	mgr := sub.NewManager()
 	br := auth.NewBridge(reg, secret)
-	h := NewHandler(br, mgr, reg)
+	h := NewHandler(br, mgr, reg, cluster.NewNoopPublisher(mgr), "test", time.Now())
 
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -122,6 +123,50 @@ func TestAuthOKAndPush(t *testing.T) {
 	}
 	if string(f.Payload) != `{"hello":"world"}` {
 		t.Fatalf("unexpected payload: %s", f.Payload)
+	}
+}
+
+func TestStatusRequestReply(t *testing.T) {
+	e := newEnv(t)
+	e.reg.Register(StatusTopic, registry.TopicMeta{RequireToken: true})
+
+	tok, err := wlhmac.Sign(wlhmac.Claims{UserID: 1, Topic: StatusTopic, Expires: time.Now().Add(time.Hour).Unix()}, secret)
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	c, _, err := websocket.DefaultDialer.Dial(e.wsURL(StatusTopic), nil)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+
+	if err := c.WriteJSON(inboundFrame{Type: "auth", Token: tok}); err != nil {
+		t.Fatalf("write auth: %v", err)
+	}
+	if f := readFrame(t, c); f.Type != "auth_ok" {
+		t.Fatalf("expected auth_ok, got %+v", f)
+	}
+
+	// Request a live status snapshot over the open connection.
+	if err := c.WriteJSON(inboundFrame{Type: "status"}); err != nil {
+		t.Fatalf("write status: %v", err)
+	}
+
+	f := readFrame(t, c)
+	if f.Type != "status" {
+		t.Fatalf("expected status frame, got %+v", f)
+	}
+	var snap statusSnapshot
+	if err := json.Unmarshal(f.Payload, &snap); err != nil {
+		t.Fatalf("unmarshal snapshot %q: %v", f.Payload, err)
+	}
+	if snap.Status != "ok" || snap.Version != "test" {
+		t.Fatalf("unexpected snapshot: %+v", snap)
+	}
+	// The status client itself is one connected client on one active topic.
+	if snap.Clients < 1 || snap.ActiveTopics < 1 {
+		t.Fatalf("expected live counts >= 1, got clients=%d topics=%d", snap.Clients, snap.ActiveTopics)
 	}
 }
 
