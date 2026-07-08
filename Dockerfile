@@ -1,9 +1,10 @@
 FROM golang:alpine AS build
+ARG VERSION=dev
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN go build -o wavelog_worker .
+RUN go build -ldflags "-X main.version=${VERSION}" -o wavelog_worker .
 
 FROM alpine:3.20
 RUN adduser -D -u 1000 worker
