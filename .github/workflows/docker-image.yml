@@ -41,6 +41,11 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+    - name: Strip leading v from version
+      id: ver
+      run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+      env:
+        VERSION: ${{ steps.meta.outputs.version }}
     - name: Build and push (amd64)
       id: build
       uses: docker/build-push-action@v6
@@ -48,7 +53,7 @@ jobs:
         context: .
         platforms: linux/amd64
         build-args: |
-          VERSION=${{ steps.meta.outputs.version }}
+          VERSION=${{ steps.ver.outputs.version }}
         outputs: type=image,name=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
         labels: ${{ steps.meta.outputs.labels }}
 
@@ -75,6 +80,11 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }}
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+    - name: Strip leading v from version
+      id: ver
+      run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+      env:
+        VERSION: ${{ steps.meta.outputs.version }}
     - name: Build and push (arm64)
       id: build
       uses: docker/build-push-action@v6
@@ -82,7 +92,7 @@ jobs:
         context: .
         platforms: linux/arm64
         build-args: |
-          VERSION=${{ steps.meta.outputs.version }}
+          VERSION=${{ steps.ver.outputs.version }}
         outputs: type=image,name=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
         labels: ${{ steps.meta.outputs.labels }}
 
@@ -111,6 +121,11 @@ jobs:
       uses: docker/setup-qemu-action@v3
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
+    - name: Strip leading v from version
+      id: ver
+      run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+      env:
+        VERSION: ${{ steps.meta.outputs.version }}
     - name: Build and push (arm/v7)
       id: build
       uses: docker/build-push-action@v6
@@ -118,7 +133,7 @@ jobs:
         context: .
         platforms: linux/arm/v7
         build-args: |
-          VERSION=${{ steps.meta.outputs.version }}
+          VERSION=${{ steps.ver.outputs.version }}
         outputs: type=image,name=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
         labels: ${{ steps.meta.outputs.labels }}
 

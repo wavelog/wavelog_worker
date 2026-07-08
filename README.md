@@ -270,6 +270,44 @@ worker_secret: ""    # min. 32 characters, generate with: openssl rand -hex 32
 
 ---
 
+## Build from Source
+
+Use `make build`. The Makefile stamps the version into the binary via `-ldflags` (derived from `git describe`); a bare `go build` leaves the version at its `dev` default.
+
+```bash
+make build            # -> dist/wavelog_worker (host platform)
+```
+
+The reported version follows the Git tag with the leading `v` stripped:
+
+- clean, on a tag → `0.1.2`
+- uncommitted changes → `0.1.2-7d1b4b8` (short commit hash appended)
+- commits after a tag → `0.1.2-3-g7d1b4b8`
+
+Cross-compilation targets (output in `dist/`):
+
+```bash
+make build-linux-amd64
+make build-linux-arm64
+make build-linux-arm     # armv7
+make build-all           # all of the above
+make clean               # remove dist/
+```
+
+Run the tests (with the race detector):
+
+```bash
+make test
+```
+
+To build the Docker image locally, pass the version as a build arg so it is stamped the same way:
+
+```bash
+docker build --build-arg VERSION=$(git describe --tags --always | sed 's/^v//') -t wavelog_worker:local .
+```
+
+---
+
 ## Deployment
 
 ### Docker Compose (single instance)
