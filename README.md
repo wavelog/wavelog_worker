@@ -1,7 +1,3 @@
-> [!IMPORTANT]
-> This project is still under development. Do NOT use in production.
-> Currently only the new Contesting supports this which is also still in development (https://github.com/wavelog/wavelog/pull/3063)
-
 # Wavelog Worker
 
 A generic WebSocket pub/sub broker written in Go. It receives events from PHP and forwards them to connected browsers. It has no knowledge of Wavelog-specific logic — topics, payloads, and their meaning are irrelevant to the Worker.
