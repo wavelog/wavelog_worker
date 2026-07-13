@@ -139,6 +139,7 @@ type statusResponse struct {
 	ActiveTopics     int      `json:"active_topics"`
 	Clients          int      `json:"connected_clients"`
 	TopicList        []string `json:"topic_list"`
+	ActiveTopicList  []string `json:"active_topic_list"`
 	ClusterNodes     int      `json:"cluster_nodes"` // -1 = single-instance mode
 }
 
@@ -153,6 +154,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	topics, clients := s.sub.Stats()
 	regTopics := s.reg.Topics()
+	activeTopics := s.sub.Topics()
 	resp := statusResponse{
 		Status:           "ok",
 		Version:          s.version,
@@ -161,6 +163,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		ActiveTopics:     topics,
 		Clients:          clients,
 		TopicList:        regTopics,
+		ActiveTopicList:  activeTopics,
 		ClusterNodes:     s.pub.ClusterNodes(),
 	}
 	w.Header().Set("Content-Type", "application/json")
