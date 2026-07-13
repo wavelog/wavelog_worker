@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-13
+
+### Added
+- internal/status now returns a list of active topics (with at least one subscriber) in addition to the list of all registered topics. (by @HB9HIL)
+
+### Changed
+- internal/status now only returns the topic lists when requested via `?topics=1`. This saves bandwidth on the debug page, as the topic lists can be very large. (by @HB9HIL)
+
 ## [0.2.0] - 2026-07-08
 
 ### Added
