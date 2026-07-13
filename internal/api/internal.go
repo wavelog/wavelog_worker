@@ -138,8 +138,8 @@ type statusResponse struct {
 	RegisteredTopics int      `json:"registered_topics"`
 	ActiveTopics     int      `json:"active_topics"`
 	Clients          int      `json:"connected_clients"`
-	TopicList        []string `json:"topic_list"`
-	ActiveTopicList  []string `json:"active_topic_list"`
+	TopicList        []string `json:"topic_list,omitempty"`
+	ActiveTopicList  []string `json:"active_topic_list,omitempty"`
 	ClusterNodes     int      `json:"cluster_nodes"` // -1 = single-instance mode
 }
 
@@ -154,7 +154,6 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	topics, clients := s.sub.Stats()
 	regTopics := s.reg.Topics()
-	activeTopics := s.sub.Topics()
 	resp := statusResponse{
 		Status:           "ok",
 		Version:          s.version,
@@ -162,9 +161,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		RegisteredTopics: len(regTopics),
 		ActiveTopics:     topics,
 		Clients:          clients,
-		TopicList:        regTopics,
-		ActiveTopicList:  activeTopics,
 		ClusterNodes:     s.pub.ClusterNodes(),
+	}
+	// only return topic lists if requested. saves some bandwith on wavelogs debug page
+	if r.URL.Query().Get("topics") == "1" {
+		resp.TopicList = regTopics
+		resp.ActiveTopicList = s.sub.Topics()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

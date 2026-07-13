@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/wavelog/wavelog_worker/internal/registry"
@@ -28,6 +31,12 @@ func (f *fakePublisher) Publish(topic string, payload json.RawMessage) {
 }
 
 func (f *fakePublisher) ClusterNodes() int { return f.clusterNodes }
+
+// fakeSubscriber is a no-op sub.Subscriber used to give a topic an active
+// subscriber in the status tests.
+type fakeSubscriber struct{}
+
+func (fakeSubscriber) Send(json.RawMessage) {}
 
 func newTestServer(t *testing.T) (*Server, *fakePublisher, registry.Registry) {
 	t.Helper()
@@ -226,4 +235,51 @@ func TestStatus(t *testing.T) {
 	if resp.ClusterNodes != 3 {
 		t.Errorf("cluster nodes: got %d, want 3 (from fake)", resp.ClusterNodes)
 	}
+	// Without ?topics=1 the (potentially large) lists must be omitted.
+	if resp.TopicList != nil || resp.ActiveTopicList != nil {
+		t.Errorf("topic lists should be omitted by default: topic_list=%v active=%v", resp.TopicList, resp.ActiveTopicList)
+	}
+	// Belt-and-suspenders: assert the keys are literally absent from the JSON.
+	if body := rr.Body.String(); strings.Contains(body, "topic_list") || strings.Contains(body, "active_topic_list") {
+		t.Errorf("topic list keys should not appear in default status: %s", body)
+	}
+}
+
+func TestStatusTopicsList(t *testing.T) {
+	s, _, reg := newTestServer(t)
+	reg.Register("a", registry.TopicMeta{})
+	reg.Register("b", registry.TopicMeta{})
+	// "a" also has an active subscriber; "b" is registered but idle.
+	s.sub.Subscribe("a", fakeSubscriber{})
+
+	rr := do(t, s, http.MethodGet, "/internal/status?topics=1", secret, nil)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200", rr.Code)
+	}
+
+	var resp statusResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
+
+	// topic_list holds all registered topics; active_topic_list only subscribed ones.
+	if got := sortedCopy(resp.TopicList); !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Errorf("topic_list: got %v, want [a b]", got)
+	}
+	if got := resp.ActiveTopicList; !reflect.DeepEqual(got, []string{"a"}) {
+		t.Errorf("active_topic_list: got %v, want [a]", got)
+	}
+	if resp.RegisteredTopics != 2 {
+		t.Errorf("registered topics: got %d, want 2", resp.RegisteredTopics)
+	}
+	if resp.ActiveTopics != 1 {
+		t.Errorf("active topics: got %d, want 1", resp.ActiveTopics)
+	}
+}
+
+// sortedCopy returns a sorted copy of s so map-iteration order doesn't flake tests.
+func sortedCopy(s []string) []string {
+	out := append([]string(nil), s...)
+	sort.Strings(out)
+	return out
 }
