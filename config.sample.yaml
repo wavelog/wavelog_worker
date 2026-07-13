@@ -21,6 +21,7 @@ worker_secret: ""
 # Optional: Redis URL for multi-instance clustering via Pub/Sub.
 # When set, all worker instances share broadcast events through Redis.
 # Omit or leave empty for single-instance mode (no Redis required).
+# If you run only one worker, but have many users, using a redis for persistent topics is recommended
 # redis_url: "redis://localhost:6379/2"  # /0-15 selects the Redis DB — use a dedicated one
 
 # Optional: idle window after which a registered topic expires and is evicted.
