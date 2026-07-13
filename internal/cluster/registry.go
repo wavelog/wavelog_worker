@@ -11,6 +11,7 @@ import (
 )
 
 const topicKeyPrefix = "wavelog:topic:"
+const scanBatch = 1000
 
 // RedisRegistry stores topic registrations in Redis so all cluster nodes share
 // the same registry state. Topics expire automatically after 24h (refreshed on
@@ -63,7 +64,7 @@ func (r *RedisRegistry) Topics() []string {
 	// (O(N) over the entire keyspace), which a large keyspace turns into a DoS.
 	// SCAN iterates incrementally without blocking other clients.
 	var topics []string
-	iter := r.client.Scan(r.ctx, 0, topicKeyPrefix+"*", 0).Iterator()
+	iter := r.client.Scan(r.ctx, 0, topicKeyPrefix+"*", scanBatch).Iterator()
 	for iter.Next(r.ctx) {
 		topics = append(topics, strings.TrimPrefix(iter.Val(), topicKeyPrefix))
 	}
@@ -72,4 +73,17 @@ func (r *RedisRegistry) Topics() []string {
 		return nil
 	}
 	return topics
+}
+
+func (r *RedisRegistry) Count() int {
+	n := 0
+	iter := r.client.Scan(r.ctx, 0, topicKeyPrefix+"*", scanBatch).Iterator()
+	for iter.Next(r.ctx) {
+		n++
+	}
+	if err := iter.Err(); err != nil {
+		log.Printf("registry: redis SCAN (count): %v", err)
+		return 0
+	}
+	return n
 }

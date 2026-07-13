@@ -17,6 +17,7 @@ type Registry interface {
 	Unregister(topic string)
 	Lookup(topic string) (TopicMeta, bool)
 	Topics() []string
+	Count() int
 }
 
 // DefaultTTL is the idle window after which a registered topic expires. Both
@@ -92,6 +93,20 @@ func (r *MemRegistry) Topics() []string {
 	}
 	r.mu.RUnlock()
 	return out
+}
+
+func (r *MemRegistry) Count() int {
+	now := time.Now()
+	r.mu.RLock()
+	n := 0
+	for _, e := range r.topics {
+		if now.After(e.expiresAt) {
+			continue
+		}
+		n++
+	}
+	r.mu.RUnlock()
+	return n
 }
 
 // reap deletes all topics that expired at or before now. Split out so tests can

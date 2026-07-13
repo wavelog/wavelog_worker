@@ -126,7 +126,7 @@ func (h *Handler) buildStatus() statusSnapshot {
 		Version:          h.version,
 		Uptime:           uptime.String(),
 		UptimeSeconds:    int(uptime.Seconds()),
-		RegisteredTopics: len(h.reg.Topics()),
+		RegisteredTopics: h.reg.Count(),
 		ActiveTopics:     active,
 		Clients:          clients,
 		ClusterNodes:     h.pub.ClusterNodes(),

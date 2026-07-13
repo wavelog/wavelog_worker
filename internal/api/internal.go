@@ -153,19 +153,18 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	topics, clients := s.sub.Stats()
-	regTopics := s.reg.Topics()
 	resp := statusResponse{
 		Status:           "ok",
 		Version:          s.version,
 		Uptime:           time.Since(s.started).Round(time.Second).String(),
-		RegisteredTopics: len(regTopics),
+		RegisteredTopics: s.reg.Count(),
 		ActiveTopics:     topics,
 		Clients:          clients,
 		ClusterNodes:     s.pub.ClusterNodes(),
 	}
 	// only return topic lists if requested. saves some bandwith on wavelogs debug page
 	if r.URL.Query().Get("topics") == "1" {
-		resp.TopicList = regTopics
+		resp.TopicList = s.reg.Topics()
 		resp.ActiveTopicList = s.sub.Topics()
 	}
 	w.Header().Set("Content-Type", "application/json")
