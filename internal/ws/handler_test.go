@@ -164,9 +164,9 @@ func TestStatusRequestReply(t *testing.T) {
 	if snap.Status != "ok" || snap.Version != "test" {
 		t.Fatalf("unexpected snapshot: %+v", snap)
 	}
-	// The status client itself is one connected client on one active topic.
-	if snap.Clients < 1 || snap.ActiveTopics < 1 {
-		t.Fatalf("expected live counts >= 1, got clients=%d topics=%d", snap.Clients, snap.ActiveTopics)
+	// The status client itself is one connected client/socket on one active topic.
+	if snap.Clients < 1 || snap.Sockets < 1 || snap.ActiveTopics < 1 {
+		t.Fatalf("expected live counts >= 1, got clients=%d sockets=%d topics=%d", snap.Clients, snap.Sockets, snap.ActiveTopics)
 	}
 }
 

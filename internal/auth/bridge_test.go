@@ -22,7 +22,7 @@ func tokenFor(t *testing.T, topic string) string {
 
 func TestValidateUnknownTopic(t *testing.T) {
 	b := NewBridge(registry.New(), secret)
-	if b.Validate("nope", tokenFor(t, "nope")) {
+	if _, ok := b.Validate("nope", tokenFor(t, "nope")); ok {
 		t.Fatal("unknown topic must not validate")
 	}
 }
@@ -32,12 +32,13 @@ func TestValidateNoTokenRequired(t *testing.T) {
 	reg.Register("open", registry.TopicMeta{RequireToken: false})
 	b := NewBridge(reg, secret)
 
-	// Token is irrelevant when the topic does not require one.
-	if !b.Validate("open", "") {
-		t.Fatal("topic without token requirement should validate with empty token")
+	// Token is irrelevant when the topic does not require one. The user is
+	// anonymous, so userID is 0.
+	if uid, ok := b.Validate("open", ""); !ok || uid != 0 {
+		t.Fatalf("topic without token requirement should validate with empty token (uid=%d ok=%v)", uid, ok)
 	}
-	if !b.Validate("open", "garbage") {
-		t.Fatal("topic without token requirement should validate with garbage token")
+	if uid, ok := b.Validate("open", "garbage"); !ok || uid != 0 {
+		t.Fatalf("topic without token requirement should validate with garbage token (uid=%d ok=%v)", uid, ok)
 	}
 }
 
@@ -46,13 +47,14 @@ func TestValidateTokenRequired(t *testing.T) {
 	reg.Register("secure", registry.TopicMeta{RequireToken: true})
 	b := NewBridge(reg, secret)
 
-	if !b.Validate("secure", tokenFor(t, "secure")) {
-		t.Fatal("valid token should validate")
+	// A valid token validates and yields the user_id from its claims (1).
+	if uid, ok := b.Validate("secure", tokenFor(t, "secure")); !ok || uid != 1 {
+		t.Fatalf("valid token should validate with its user_id (uid=%d ok=%v)", uid, ok)
 	}
-	if b.Validate("secure", "invalid-token") {
+	if _, ok := b.Validate("secure", "invalid-token"); ok {
 		t.Fatal("invalid token must not validate")
 	}
-	if b.Validate("secure", "") {
+	if _, ok := b.Validate("secure", ""); ok {
 		t.Fatal("empty token must not validate")
 	}
 
@@ -61,7 +63,7 @@ func TestValidateTokenRequired(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	if b.Validate("secure", expired) {
+	if _, ok := b.Validate("secure", expired); ok {
 		t.Fatal("expired token must not validate")
 	}
 }
@@ -77,13 +79,13 @@ func TestValidateTokenTopicMismatch(t *testing.T) {
 	// Token minted for the attacker's own session.
 	own := tokenFor(t, "contest_session.100")
 
-	if !b.Validate("contest_session.100", own) {
+	if _, ok := b.Validate("contest_session.100", own); !ok {
 		t.Fatal("token must validate for its own topic")
 	}
-	if b.Validate("contest_session.999", own) {
+	if _, ok := b.Validate("contest_session.999", own); ok {
 		t.Fatal("token for one contest session must not validate for another")
 	}
-	if b.Validate("radio.5", own) {
+	if _, ok := b.Validate("radio.5", own); ok {
 		t.Fatal("contest-session token must not validate for a radio topic")
 	}
 }

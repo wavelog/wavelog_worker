@@ -30,6 +30,15 @@ type blockingSub struct{ ch chan struct{} }
 
 func (b *blockingSub) Send(json.RawMessage) { <-b.ch } // would block forever
 
+// idSub is a subscriber that exposes a user_id, like ws.Client. Used to verify
+// that Stats deduplicates connected clients by user.
+type idSub struct {
+	recvSub
+	id int
+}
+
+func (s *idSub) UserID() int { return s.id }
+
 func TestSubscribePublish(t *testing.T) {
 	m := NewManager()
 	s := &recvSub{}
@@ -93,13 +102,41 @@ func TestHasSubscribersAndStats(t *testing.T) {
 		t.Fatal("topic c should have no subscribers")
 	}
 
-	topics, clients := m.Stats()
+	topics, sockets, clients := m.Stats()
 	if topics != 2 {
 		t.Errorf("Stats topics: got %d, want 2", topics)
 	}
-	// a has 2 subscribers, b has 1 → 3 total.
+	// a has 2 subscribers, b has 1 → 3 sockets total.
+	if sockets != 3 {
+		t.Errorf("Stats sockets: got %d, want 3", sockets)
+	}
+	// recvSub exposes no UserID, so each socket counts as its own client → 3.
 	if clients != 3 {
 		t.Errorf("Stats clients: got %d, want 3", clients)
+	}
+}
+
+// A single user holding several sockets (one per topic) must count as one client
+// but multiple sockets. Distinct users are counted separately.
+func TestStatsDeduplicatesClientsByUser(t *testing.T) {
+	m := NewManager()
+	u1a := &idSub{id: 1}
+	u1b := &idSub{id: 1}
+	u2 := &idSub{id: 2}
+	m.Subscribe("dashboard", u1a)
+	m.Subscribe("radio", u1b)
+	m.Subscribe("dashboard", u2)
+
+	topics, sockets, clients := m.Stats()
+	if topics != 2 {
+		t.Errorf("Stats topics: got %d, want 2", topics)
+	}
+	if sockets != 3 {
+		t.Errorf("Stats sockets: got %d, want 3", sockets)
+	}
+	// user 1 (two sockets) + user 2 (one socket) → 2 distinct clients.
+	if clients != 2 {
+		t.Errorf("Stats clients: got %d, want 2", clients)
 	}
 }
 

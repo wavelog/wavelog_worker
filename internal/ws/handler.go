@@ -28,8 +28,9 @@ type statusSnapshot struct {
 	UptimeSeconds    int    `json:"uptime_seconds"`
 	RegisteredTopics int    `json:"registered_topics"`
 	ActiveTopics     int    `json:"active_topics"`
-	Clients          int    `json:"connected_clients"`
-	ClusterNodes     int    `json:"cluster_nodes"` // -1 = single-instance mode
+	Clients          int    `json:"connected_clients"` // distinct users (deduplicated by user_id)
+	Sockets          int    `json:"connected_sockets"` // raw WebSocket connections
+	ClusterNodes     int    `json:"cluster_nodes"`     // -1 = single-instance mode
 }
 
 const (
@@ -66,12 +67,17 @@ type Client struct {
 	conn   *websocket.Conn
 	send   chan []byte
 	topic  string
+	userID int
 	mu     sync.Mutex
 	closed bool
 
 	statusFn   func() statusSnapshot
 	lastStatus time.Time
 }
+
+// UserID returns the authenticated user's ID (0 for anonymous connections).
+// Used by sub.Manager to deduplicate connected clients by user.
+func (c *Client) UserID() int { return c.userID }
 
 func (c *Client) Send(payload json.RawMessage) {
 	c.sendFrame(outboundFrame{Type: "push", Payload: payload})
@@ -119,7 +125,7 @@ func NewHandler(a *auth.Bridge, s *sub.Manager, reg registry.Registry, pub clust
 
 // buildStatus gathers the current live stats for the status feed.
 func (h *Handler) buildStatus() statusSnapshot {
-	active, clients := h.sub.Stats()
+	active, sockets, clients := h.sub.Stats()
 	uptime := time.Since(h.started).Round(time.Second)
 	return statusSnapshot{
 		Status:           "ok",
@@ -129,6 +135,7 @@ func (h *Handler) buildStatus() statusSnapshot {
 		RegisteredTopics: h.reg.Count(),
 		ActiveTopics:     active,
 		Clients:          clients,
+		Sockets:          sockets,
 		ClusterNodes:     h.pub.ClusterNodes(),
 	}
 }
@@ -171,7 +178,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.auth.Validate(topic, authFrame.Token) {
+	userID, ok := h.auth.Validate(topic, authFrame.Token)
+	if !ok {
 		conn.WriteMessage(websocket.TextMessage, mustMarshal(outboundFrame{Type: "error", Code: "unauthorized", Message: "invalid or expired token"}))
 		conn.Close()
 		log.Printf("ip=%s -- ws: unauthorized topic=%s", ip, topic)
@@ -182,9 +190,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn.WriteMessage(websocket.TextMessage, mustMarshal(outboundFrame{Type: "auth_ok"}))
 
 	c := &Client{
-		conn:  conn,
-		send:  make(chan []byte, sendBuf),
-		topic: topic,
+		conn:   conn,
+		send:   make(chan []byte, sendBuf),
+		topic:  topic,
+		userID: userID,
 	}
 	// Clients on the reserved status topic may pull live stats over the socket.
 	if topic == StatusTopic {

@@ -86,13 +86,26 @@ func (m *Manager) Topics() []string {
 	return out
 }
 
-// Stats returns the number of active topics and total connected clients.
-func (m *Manager) Stats() (topics int, clients int) {
+// Stats returns the number of active topics, raw socket connections, and
+// distinct connected clients. A single user may hold several sockets (one per
+// topic); clients deduplicates those by user_id, while sockets is the raw count.
+// Subscribers that expose a UserID() are grouped by that ID; anonymous ones
+// (no UserID, or user_id 0) cannot be deduplicated and each count as a client.
+func (m *Manager) Stats() (topics, sockets, clients int) {
 	m.mu.RLock()
 	topics = len(m.subs)
+	users := make(map[int]struct{})
 	for _, set := range m.subs {
-		clients += len(set)
+		for s := range set {
+			sockets++
+			if u, ok := s.(interface{ UserID() int }); ok && u.UserID() > 0 {
+				users[u.UserID()] = struct{}{}
+			} else {
+				clients++ // anonymous / no token → not deduplicable, count individually
+			}
+		}
 	}
+	clients += len(users)
 	m.mu.RUnlock()
 	return
 }
