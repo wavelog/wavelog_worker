@@ -1,7 +1,7 @@
 BINARY  := wavelog_worker
 DIST    := dist
 COMMIT      := $(shell git rev-parse --short HEAD 2>/dev/null)
-RAW_VERSION := $(shell git describe --tags --always --dirty=-$(COMMIT) 2>/dev/null || echo "dev")
+RAW_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 VERSION     := $(patsubst v%,%,$(RAW_VERSION))
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 
