@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-09-21
+
 ### Fixed
 - Worker no longer falls back permanently to single-instance mode when Redis is unreachable at startup or lost later. It keeps retrying with backoff (1s to 30s) and resumes cluster mode once Redis is back. An invalid `redis_url` is now a fatal config error instead of a silent fallback. (by @HB9HIL)
 
