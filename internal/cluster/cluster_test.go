@@ -186,3 +186,67 @@ func TestRedisRegistry(t *testing.T) {
 		t.Fatal("topic a should be gone after Unregister")
 	}
 }
+
+// waitReady polls until Ready() reports want or the deadline hits.
+func waitReady(t *testing.T, rp *RedisPublisher, want bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if rp.Ready() == want {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timeout waiting for Ready()==%v", want)
+}
+
+// Redis unreachable at startup, reachable later; then lost and back again.
+// The publisher must never fall back permanently and must resume cluster
+// delivery on its own each time Redis returns.
+func TestRedisPublisherReconnect(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis: %v", err)
+	}
+	url := "redis://" + mr.Addr()
+	mr.Close() // Redis down before the workers start
+	t.Cleanup(mr.Close)
+
+	origMin, origMax, origHealth := reconnectMin, reconnectMax, healthInterval
+	reconnectMin, reconnectMax, healthInterval = 20*time.Millisecond, 100*time.Millisecond, 20*time.Millisecond
+	t.Cleanup(func() { reconnectMin, reconnectMax, healthInterval = origMin, origMax, origHealth })
+
+	mgrA, mgrB := sub.NewManager(), sub.NewManager()
+	rpA, err := NewRedisPublisher(url, mgrA)
+	if err != nil {
+		t.Fatalf("NewRedisPublisher A must not fail on unreachable redis: %v", err)
+	}
+	defer rpA.Close()
+	rpB, err := NewRedisPublisher(url, mgrB)
+	if err != nil {
+		t.Fatalf("NewRedisPublisher B must not fail on unreachable redis: %v", err)
+	}
+	defer rpB.Close()
+
+	waitReady(t, rpA, false)
+	waitReady(t, rpB, false)
+
+	sB := &recvSub{}
+	mgrB.Subscribe("t", sB)
+
+	for round := 1; round <= 2; round++ {
+		if err := mr.Restart(); err != nil {
+			t.Fatalf("round %d: miniredis restart: %v", round, err)
+		}
+		waitReady(t, rpA, true)
+		waitReady(t, rpB, true)
+		waitNodes(t, rpA, 2) // both resubscribed to the channel
+
+		rpA.Publish("t", json.RawMessage(`{"round":1}`))
+		waitCount(t, sB, round) // arrived cross-instance after reconnect
+
+		mr.Close()
+		waitReady(t, rpA, false)
+		waitReady(t, rpB, false)
+	}
+}

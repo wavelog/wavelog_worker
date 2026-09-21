@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Worker no longer falls back permanently to single-instance mode when Redis is unreachable at startup or lost later. It keeps retrying with backoff (1s to 30s) and resumes cluster mode once Redis is back. An invalid `redis_url` is now a fatal config error instead of a silent fallback. (by @HB9HIL)
+
+### Added
+- `GET :9001/readyz` readiness endpoint: `503` while `redis_url` is configured but Redis is not connected, `200` otherwise. (by @HB9HIL)
+
 ## [0.2.4] - 2026-08-16
 
 ### Updated

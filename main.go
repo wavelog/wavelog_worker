@@ -48,14 +48,11 @@ func main() {
 		var err error
 		rp, err = cluster.NewRedisPublisher(cfg.RedisURL, subMgr)
 		if err != nil {
-			log.Printf("cluster: redis unavailable, falling back to single-instance: %v", err)
-			reg = registry.New()
-			pub = cluster.NewNoopPublisher(subMgr)
-		} else {
-			log.Printf("cluster: redis pub/sub active (%s)", cfg.RedisURL)
-			reg = cluster.NewRedisRegistry(rp.Client(), rp.Context())
-			pub = rp
+			log.Fatalf("cluster: invalid redis_url: %v", err)
 		}
+		log.Printf("cluster: redis pub/sub configured (%s)", cfg.RedisURL)
+		reg = cluster.NewRedisRegistry(rp.Client(), rp.Context())
+		pub = rp
 	} else {
 		reg = registry.New()
 		pub = cluster.NewNoopPublisher(subMgr)
@@ -63,7 +60,7 @@ func main() {
 
 	// Reserve the live-status topic ourselves so the Debug page can subscribe to
 	// it without any PHP round-trip.
-	reg.Register(ws.StatusTopic, registry.TopicMeta{RequireToken: true})
+	go reg.Register(ws.StatusTopic, registry.TopicMeta{RequireToken: true})
 
 	authBr := auth.NewBridge(reg, cfg.WorkerSecret)
 	wsHdlr := ws.NewHandler(authBr, subMgr, reg, pub, version, time.Now())
@@ -77,9 +74,19 @@ func main() {
 		Addr:    net.JoinHostPort(cfg.WSBind, strconv.Itoa(cfg.WSPort)),
 		Handler: wsMux,
 	}
+	internalMux := http.NewServeMux()
+	internalMux.Handle("/", apiSvr.Handler())
+	internalMux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if rp != nil && !rp.Ready() {
+			http.Error(w, "redis not connected", http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte("ok"))
+	})
+
 	internalServer := &http.Server{
 		Addr:    net.JoinHostPort(cfg.InternalBind, strconv.Itoa(cfg.InternalPort)),
-		Handler: apiSvr.Handler(),
+		Handler: internalMux,
 	}
 
 	log.Printf("welcome to the wavelog worker (version %s)", version)

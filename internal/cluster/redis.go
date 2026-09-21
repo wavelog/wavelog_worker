@@ -6,12 +6,21 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"log"
+	"sync/atomic"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/wavelog/wavelog_worker/internal/sub"
 )
 
 const redisChannel = "wavelog:events"
+
+var (
+	reconnectMin   = time.Second
+	reconnectMax   = 30 * time.Second
+	healthInterval = 5 * time.Second
+	pingTimeout    = 5 * time.Second
+)
 
 // Publisher is the narrow interface api.Server uses to broadcast events.
 // ClusterNodes returns the number of active worker instances sharing the Redis
@@ -42,42 +51,71 @@ type envelope struct {
 // RedisPublisher fans out events via Redis Pub/Sub so all worker instances
 // receive every publish, regardless of which instance PHP posted to.
 type RedisPublisher struct {
-	client     *redis.Client
-	mgr        *sub.Manager
-	instanceID string
-	ctx        context.Context
-	cancel     context.CancelFunc
+	client      *redis.Client
+	mgr         *sub.Manager
+	instanceID  string
+	ctx         context.Context
+	cancel      context.CancelFunc
+	connected   atomic.Bool
+	monitorDone chan struct{}
 }
 
-// NewRedisPublisher connects to Redis, verifies reachability, and starts the
-// subscriber goroutine. Returns an error if the initial ping fails — the caller
-// should fall back to NoopPublisher in that case.
 func NewRedisPublisher(redisURL string, mgr *sub.Manager) (*RedisPublisher, error) {
 	opts, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, err
 	}
 	client := redis.NewClient(opts)
-
 	ctx, cancel := context.WithCancel(context.Background())
-	if err := client.Ping(ctx).Err(); err != nil {
-		cancel()
-		client.Close()
-		return nil, err
-	}
 
 	id := make([]byte, 8)
 	rand.Read(id)
 
 	rp := &RedisPublisher{
-		client:     client,
-		mgr:        mgr,
-		instanceID: hex.EncodeToString(id),
-		ctx:        ctx,
-		cancel:     cancel,
+		client:      client,
+		mgr:         mgr,
+		instanceID:  hex.EncodeToString(id),
+		ctx:         ctx,
+		cancel:      cancel,
+		monitorDone: make(chan struct{}),
 	}
 	go rp.subscribe()
+	go rp.monitor()
 	return rp, nil
+}
+
+func (r *RedisPublisher) Ready() bool { return r.connected.Load() }
+
+func (r *RedisPublisher) monitor() {
+	defer close(r.monitorDone)
+	delay := reconnectMin
+	for {
+		pctx, cancel := context.WithTimeout(r.ctx, pingTimeout)
+		err := r.client.Ping(pctx).Err()
+		cancel()
+
+		up := err == nil
+		if r.connected.Swap(up) != up {
+			if up {
+				log.Printf("cluster: redis connected")
+			} else {
+				log.Printf("cluster: redis lost, retrying: %v", err)
+			}
+		}
+
+		wait := healthInterval
+		if !up {
+			wait = delay
+			delay = min(delay*2, reconnectMax)
+		} else {
+			delay = reconnectMin
+		}
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
 }
 
 // Publish broadcasts the event to all cluster members via Redis, and also
@@ -140,11 +178,12 @@ func (r *RedisPublisher) ClusterNodes() int {
 	return int(res[redisChannel])
 }
 
-func (r *RedisPublisher) Client() *redis.Client       { return r.client }
-func (r *RedisPublisher) Context() context.Context    { return r.ctx }
+func (r *RedisPublisher) Client() *redis.Client    { return r.client }
+func (r *RedisPublisher) Context() context.Context { return r.ctx }
 
 // Close shuts down the subscriber goroutine and the Redis connection.
 func (r *RedisPublisher) Close() {
 	r.cancel()
+	<-r.monitorDone
 	r.client.Close()
 }

@@ -133,6 +133,18 @@ Response (single instance):
 
 ---
 
+## Readiness
+
+```
+GET :9001/readyz
+```
+
+No secret required. Returns `200 ok` when the Worker can serve traffic, or `503 redis not connected` while `redis_url` is configured but Redis is unreachable. Use it as readiness probe (k8s) or health check (Docker/HAProxy) so a node that is not yet part of the cluster gets no traffic. In single-instance mode (no `redis_url`) it is always `200`.
+
+If Redis is unreachable at startup or lost later, the Worker does **not** fall back to single-instance mode. It keeps retrying with backoff (1s to 30s) and resumes cluster mode automatically once Redis is back.
+
+---
+
 ## Cluster Mode
 
 By default each Worker instance is standalone. For high-availability or horizontal scaling, multiple instances can be connected via Redis Pub/Sub so that a publish to any one node is fan-out to all browsers across all nodes.
