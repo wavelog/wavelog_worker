@@ -1,15 +1,17 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	WSBind       string `yaml:"ws_bind"`       // optional, empty = all interfaces
+	WSBind       string `yaml:"ws_bind"` // optional, empty = all interfaces
 	WSPort       int    `yaml:"ws_port"`
 	InternalBind string `yaml:"internal_bind"` // optional, empty = all interfaces
 	InternalPort int    `yaml:"internal_port"`
@@ -23,16 +25,21 @@ type Config struct {
 }
 
 func Load(p string) (*Config, error) {
-	data, err := os.ReadFile(p)
-	if err != nil {
-		return nil, err
-	}
 	cfg := &Config{
 		WSPort:       9000,
 		InternalBind: "127.0.0.1", // internal API carries the worker_secret — default to localhost
 		InternalPort: 9001,
 	}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	data, err := os.ReadFile(p)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	if err == nil {
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, err
+		}
+	}
+	if err := cfg.applyEnv(); err != nil {
 		return nil, err
 	}
 	if cfg.RawTopicTTL != "" {
@@ -46,4 +53,34 @@ func Load(p string) (*Config, error) {
 		cfg.TopicTTL = d
 	}
 	return cfg, nil
+}
+
+// applyEnv overrides fields from WORKER_* variables. Empty values are ignored.
+func (c *Config) applyEnv() error {
+	str := func(key string, dst *string) {
+		if v := os.Getenv(key); v != "" {
+			*dst = v
+		}
+	}
+	num := func(key string, dst *int) error {
+		v := os.Getenv(key)
+		if v == "" {
+			return nil
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return fmt.Errorf("config: %s must be a number, got %q", key, v)
+		}
+		*dst = n
+		return nil
+	}
+	str("WORKER_WS_BIND", &c.WSBind)
+	str("WORKER_INTERNAL_BIND", &c.InternalBind)
+	str("WORKER_SECRET", &c.WorkerSecret)
+	str("WORKER_REDIS_URL", &c.RedisURL)
+	str("WORKER_TOPIC_TTL", &c.RawTopicTTL)
+	if err := num("WORKER_WS_PORT", &c.WSPort); err != nil {
+		return err
+	}
+	return num("WORKER_INTERNAL_PORT", &c.InternalPort)
 }

@@ -44,8 +44,8 @@ type Server struct {
 	started time.Time
 }
 
-func NewServer(s *sub.Manager, pub cluster.Publisher, reg registry.Registry, secret, version string) *Server {
-	return &Server{sub: s, pub: pub, reg: reg, secret: secret, version: version, started: time.Now()}
+func NewServer(s *sub.Manager, pub cluster.Publisher, reg registry.Registry, secret, version string, started time.Time) *Server {
+	return &Server{sub: s, pub: pub, reg: reg, secret: secret, version: version, started: started}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -132,16 +132,17 @@ func (s *Server) handlePush(w http.ResponseWriter, r *http.Request) {
 }
 
 type statusResponse struct {
-	Status           string   `json:"status"`
-	Version          string   `json:"version"`
-	Uptime           string   `json:"uptime"`
-	RegisteredTopics int      `json:"registered_topics"`
-	ActiveTopics     int      `json:"active_topics"`
-	Clients          int      `json:"connected_clients"` // distinct users (deduplicated by user_id)
-	Sockets          int      `json:"connected_sockets"` // raw WebSocket connections
-	TopicList        []string `json:"topic_list,omitempty"`
-	ActiveTopicList  []string `json:"active_topic_list,omitempty"`
-	ClusterNodes     int      `json:"cluster_nodes"` // -1 = single-instance mode
+	Status           string             `json:"status"`
+	Version          string             `json:"version"`
+	Uptime           string             `json:"uptime"`
+	RegisteredTopics int                `json:"registered_topics"`
+	ActiveTopics     int                `json:"active_topics"`
+	Clients          int                `json:"connected_clients"` // distinct users (deduplicated by user_id)
+	Sockets          int                `json:"connected_sockets"` // raw WebSocket connections
+	TopicList        []string           `json:"topic_list,omitempty"`
+	ActiveTopicList  []string           `json:"active_topic_list,omitempty"`
+	ClusterNodes     int                `json:"cluster_nodes"` // -1 = single-instance mode
+	Nodes            []cluster.NodeInfo `json:"nodes"`
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -163,6 +164,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Clients:          clients,
 		Sockets:          sockets,
 		ClusterNodes:     s.pub.ClusterNodes(),
+		Nodes:            s.pub.Nodes(),
 	}
 	// only return topic lists if requested. saves some bandwith on wavelogs debug page
 	if r.URL.Query().Get("topics") == "1" {

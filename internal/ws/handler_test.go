@@ -29,7 +29,7 @@ func newEnv(t *testing.T) *testEnv {
 	reg := registry.New()
 	mgr := sub.NewManager()
 	br := auth.NewBridge(reg, secret)
-	h := NewHandler(br, mgr, reg, cluster.NewNoopPublisher(mgr), "test", time.Now())
+	h := NewHandler(br, mgr, reg, cluster.NewNoopPublisher(mgr, cluster.NewSelf("test", time.Now(), mgr.Stats)), "test", time.Now())
 
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
