@@ -293,6 +293,31 @@ worker_secret: ""    # min. 32 characters, generate with: openssl rand -hex 32
 # redis_url: "redis://localhost:6379/2"
 ```
 
+### Environment variables
+
+Every option can also be set via `WORKER_*` environment variables. They override the file, and the file may be missing entirely, which is handy in Docker and Kubernetes (no config mount, secret from a real secret store):
+
+| Variable | Option |
+|---|---|
+| `WORKER_WS_BIND` | `ws_bind` |
+| `WORKER_WS_PORT` | `ws_port` |
+| `WORKER_INTERNAL_BIND` | `internal_bind` |
+| `WORKER_INTERNAL_PORT` | `internal_port` |
+| `WORKER_SECRET` | `worker_secret` |
+| `WORKER_REDIS_URL` | `redis_url` |
+| `WORKER_TOPIC_TTL` | `topic_ttl` |
+
+Empty variables are ignored. Without a config file the log says `config: config.yaml not found, using WORKER_* environment variables only`.
+
+```yaml
+wavelog-worker:
+  image: ghcr.io/wavelog/wavelog_worker:latest
+  environment:
+    WORKER_INTERNAL_BIND: "0.0.0.0"
+    WORKER_SECRET: "${WORKER_SECRET}"
+    WORKER_REDIS_URL: "redis://wavelog-cache:6379/2"
+```
+
 ---
 
 ## Build from Source

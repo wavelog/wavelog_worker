@@ -102,9 +102,58 @@ func TestLoadTopicTTLInvalid(t *testing.T) {
 	}
 }
 
+// A missing file is fine: defaults apply and the environment can fill the rest.
 func TestLoadMissingFile(t *testing.T) {
-	if _, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml")); err == nil {
-		t.Fatal("expected error for missing file")
+	cfg, err := Load(filepath.Join(t.TempDir(), "does-not-exist.yaml"))
+	if err != nil {
+		t.Fatalf("missing file must not be an error: %v", err)
+	}
+	if cfg.WSPort != 9000 || cfg.InternalPort != 9001 || cfg.InternalBind != "127.0.0.1" {
+		t.Errorf("defaults: got %+v", cfg)
+	}
+}
+
+func TestLoadEnvOnly(t *testing.T) {
+	t.Setenv("WORKER_WS_BIND", "0.0.0.0")
+	t.Setenv("WORKER_WS_PORT", "8000")
+	t.Setenv("WORKER_INTERNAL_BIND", "0.0.0.0")
+	t.Setenv("WORKER_INTERNAL_PORT", "8001")
+	t.Setenv("WORKER_SECRET", "env-secret")
+	t.Setenv("WORKER_REDIS_URL", "redis://env:6379/1")
+	t.Setenv("WORKER_TOPIC_TTL", "2h")
+	cfg, err := Load(filepath.Join(t.TempDir(), "none.yaml"))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.WSBind != "0.0.0.0" || cfg.WSPort != 8000 || cfg.InternalBind != "0.0.0.0" || cfg.InternalPort != 8001 {
+		t.Errorf("listeners: got %+v", cfg)
+	}
+	if cfg.WorkerSecret != "env-secret" || cfg.RedisURL != "redis://env:6379/1" || cfg.TopicTTL != 2*time.Hour {
+		t.Errorf("values: got %+v", cfg)
+	}
+}
+
+// Env overrides the file; unset or empty env vars leave file values alone.
+func TestLoadEnvOverridesFile(t *testing.T) {
+	p := writeTemp(t, "ws_port: 8000\nworker_secret: \"from-file\"\nredis_url: \"redis://file:6379/0\"\n")
+	t.Setenv("WORKER_SECRET", "from-env")
+	t.Setenv("WORKER_REDIS_URL", "")
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.WorkerSecret != "from-env" {
+		t.Errorf("worker_secret: env must win, got %q", cfg.WorkerSecret)
+	}
+	if cfg.WSPort != 8000 || cfg.RedisURL != "redis://file:6379/0" {
+		t.Errorf("file values must survive: got %+v", cfg)
+	}
+}
+
+func TestLoadEnvBadPort(t *testing.T) {
+	t.Setenv("WORKER_WS_PORT", "nine")
+	if _, err := Load(filepath.Join(t.TempDir(), "none.yaml")); err == nil {
+		t.Fatal("expected error for non-numeric WORKER_WS_PORT")
 	}
 }
 

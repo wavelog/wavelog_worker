@@ -27,12 +27,15 @@ func main() {
 	cfgPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
 
+	if _, err := os.Stat(*cfgPath); err != nil {
+		log.Printf("config: %s not found, using WORKER_* environment variables only", *cfgPath)
+	}
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		log.Fatalf("config: %v", err)
 	}
 	if len(cfg.WorkerSecret) < 32 {
-		log.Fatalf("config: worker_secret must be at least 32 characters")
+		log.Fatalf("config: worker_secret (or WORKER_SECRET) must be at least 32 characters")
 	}
 	if cfg.TopicTTL > 0 {
 		registry.DefaultTTL = cfg.TopicTTL
