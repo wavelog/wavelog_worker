@@ -7,11 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-22
+
 ### Changed
 - Worker are now completely stateless and can be scaled horizontally without the need to change anything in the Wavelog worker.php config. (by @HB9HIL)
 
 ### Added
 - Configuration via `WORKER_*` environment variables (`WORKER_SECRET`, `WORKER_REDIS_URL`, `WORKER_WS_PORT`, ...). They override `config.yaml`, and the file may be absent entirely, so the container can run without a config mount. (by @HB9HIL)
+
+### Chore
+- Updated dependencies (by @dependabot)
 
 ## [0.2.5] - 2026-09-21
 
