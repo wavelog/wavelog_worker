@@ -2,8 +2,6 @@ package cluster
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"log"
 	"sync/atomic"
@@ -28,18 +26,26 @@ var (
 type Publisher interface {
 	Publish(topic string, payload json.RawMessage)
 	ClusterNodes() int
+	Nodes() []NodeInfo
 }
 
 // NoopPublisher delegates directly to the local sub.Manager (single-instance mode).
-type NoopPublisher struct{ mgr *sub.Manager }
+type NoopPublisher struct {
+	mgr  *sub.Manager
+	self Self
+}
 
-func NewNoopPublisher(m *sub.Manager) *NoopPublisher { return &NoopPublisher{mgr: m} }
+func NewNoopPublisher(m *sub.Manager, self Self) *NoopPublisher {
+	return &NoopPublisher{mgr: m, self: self}
+}
 
 func (n *NoopPublisher) Publish(topic string, payload json.RawMessage) {
 	n.mgr.Publish(topic, payload)
 }
 
 func (n *NoopPublisher) ClusterNodes() int { return -1 }
+
+func (n *NoopPublisher) Nodes() []NodeInfo { return []NodeInfo{n.self.info(time.Now())} }
 
 // envelope is the wire format for Redis messages.
 type envelope struct {
@@ -53,14 +59,15 @@ type envelope struct {
 type RedisPublisher struct {
 	client      *redis.Client
 	mgr         *sub.Manager
-	instanceID  string
+	self        Self
 	ctx         context.Context
 	cancel      context.CancelFunc
 	connected   atomic.Bool
 	monitorDone chan struct{}
+	hbDone      chan struct{}
 }
 
-func NewRedisPublisher(redisURL string, mgr *sub.Manager) (*RedisPublisher, error) {
+func NewRedisPublisher(redisURL string, mgr *sub.Manager, self Self) (*RedisPublisher, error) {
 	opts, err := redis.ParseURL(redisURL)
 	if err != nil {
 		return nil, err
@@ -68,19 +75,25 @@ func NewRedisPublisher(redisURL string, mgr *sub.Manager) (*RedisPublisher, erro
 	client := redis.NewClient(opts)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	id := make([]byte, 8)
-	rand.Read(id)
-
 	rp := &RedisPublisher{
 		client:      client,
 		mgr:         mgr,
-		instanceID:  hex.EncodeToString(id),
+		self:        self,
 		ctx:         ctx,
 		cancel:      cancel,
 		monitorDone: make(chan struct{}),
+		hbDone:      make(chan struct{}),
 	}
+
+	wctx, wcancel := context.WithTimeout(ctx, 2*time.Second)
+	if err := rp.writePresence(wctx); err != nil {
+		log.Printf("cluster: presence write deferred: %v", err)
+	}
+	wcancel()
+
 	go rp.subscribe()
 	go rp.monitor()
+	go rp.heartbeat()
 	return rp, nil
 }
 
@@ -125,7 +138,7 @@ func (r *RedisPublisher) Publish(topic string, payload json.RawMessage) {
 	r.mgr.Publish(topic, payload)
 
 	env := envelope{
-		OriginID: r.instanceID,
+		OriginID: r.self.ID,
 		Topic:    topic,
 		Payload:  payload,
 	}
@@ -160,7 +173,7 @@ func (r *RedisPublisher) subscribe() {
 				continue
 			}
 			// Skip own messages — already delivered locally in Publish().
-			if env.OriginID == r.instanceID {
+			if env.OriginID == r.self.ID {
 				continue
 			}
 			r.mgr.Publish(env.Topic, env.Payload)
@@ -178,12 +191,93 @@ func (r *RedisPublisher) ClusterNodes() int {
 	return int(res[redisChannel])
 }
 
+// heartbeat refreshes our roster entry and prunes stale ones. Every node
+// prunes; HDEL is idempotent so concurrent pruning is harmless.
+func (r *RedisPublisher) heartbeat() {
+	defer close(r.hbDone)
+	t := time.NewTicker(heartbeatInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case <-t.C:
+			if err := r.writePresence(r.ctx); err != nil {
+				continue // Redis down; monitor() logs it
+			}
+			r.prune()
+		}
+	}
+}
+
+func (r *RedisPublisher) writePresence(ctx context.Context) error {
+	b, err := json.Marshal(r.self.info(time.Now()))
+	if err != nil {
+		return err
+	}
+	return r.client.HSet(ctx, nodesKey, r.self.ID, b).Err()
+}
+
+func (r *RedisPublisher) prune() {
+	nodes, err := r.readNodes()
+	if err != nil {
+		return
+	}
+	alive := map[string]bool{}
+	for _, n := range nodes {
+		if n.Alive {
+			alive[n.Name] = true
+		}
+	}
+	now := time.Now()
+	var stale []string
+	for _, n := range nodes {
+		if !n.Alive && (alive[n.Name] || now.Sub(n.SeenAt) > nodeForgetAfter) {
+			stale = append(stale, n.ID)
+		}
+	}
+	if len(stale) > 0 {
+		r.client.HDel(r.ctx, nodesKey, stale...)
+	}
+}
+
+func (r *RedisPublisher) readNodes() ([]NodeInfo, error) {
+	raw, err := r.client.HGetAll(r.ctx, nodesKey).Result()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	nodes := make([]NodeInfo, 0, len(raw))
+	for _, v := range raw {
+		var n NodeInfo
+		if json.Unmarshal([]byte(v), &n) != nil {
+			continue
+		}
+		n.fill(now)
+		nodes = append(nodes, n)
+	}
+	sortNodes(nodes)
+	return nodes, nil
+}
+
+func (r *RedisPublisher) Nodes() []NodeInfo {
+	nodes, err := r.readNodes()
+	if err != nil {
+		return nil
+	}
+	return nodes
+}
+
 func (r *RedisPublisher) Client() *redis.Client    { return r.client }
 func (r *RedisPublisher) Context() context.Context { return r.ctx }
 
-// Close shuts down the subscriber goroutine and the Redis connection.
+// Close stops the goroutines, removes our roster entry and closes the connection.
 func (r *RedisPublisher) Close() {
 	r.cancel()
 	<-r.monitorDone
+	<-r.hbDone // heartbeat must be stopped before HDEL, or it could re-add us
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	r.client.HDel(ctx, nodesKey, r.self.ID)
+	cancel()
 	r.client.Close()
 }

@@ -40,13 +40,16 @@ func main() {
 	}
 
 	subMgr := sub.NewManager()
+	started := time.Now()
+	self := cluster.NewSelf(version, started, subMgr.Stats)
+	log.Printf("cluster: node name=%s id=%s", self.Name, self.ID)
 
 	var reg registry.Registry
 	var pub cluster.Publisher
 	var rp *cluster.RedisPublisher
 	if cfg.RedisURL != "" {
 		var err error
-		rp, err = cluster.NewRedisPublisher(cfg.RedisURL, subMgr)
+		rp, err = cluster.NewRedisPublisher(cfg.RedisURL, subMgr, self)
 		if err != nil {
 			log.Fatalf("cluster: invalid redis_url: %v", err)
 		}
@@ -55,7 +58,7 @@ func main() {
 		pub = rp
 	} else {
 		reg = registry.New()
-		pub = cluster.NewNoopPublisher(subMgr)
+		pub = cluster.NewNoopPublisher(subMgr, self)
 	}
 
 	// Reserve the live-status topic ourselves so the Debug page can subscribe to
@@ -63,9 +66,9 @@ func main() {
 	go reg.Register(ws.StatusTopic, registry.TopicMeta{RequireToken: true})
 
 	authBr := auth.NewBridge(reg, cfg.WorkerSecret)
-	wsHdlr := ws.NewHandler(authBr, subMgr, reg, pub, version, time.Now())
+	wsHdlr := ws.NewHandler(authBr, subMgr, reg, pub, version, started)
 
-	apiSvr := api.NewServer(subMgr, pub, reg, cfg.WorkerSecret, version)
+	apiSvr := api.NewServer(subMgr, pub, reg, cfg.WorkerSecret, version, started)
 
 	wsMux := http.NewServeMux()
 	wsMux.Handle("/ws", wsHdlr)

@@ -119,17 +119,36 @@ Response (single instance):
 ```json
 {
   "status": "ok",
-  "version": "0.1.0",
-  "uptime": "3h22m",
+  "version": "0.3.0",
+  "uptime": "3h22m0s",
   "registered_topics": 2,
   "active_topics": 1,
   "connected_clients": 3,
-  "topic_list": ["session.42", "session.7"],
-  "cluster_nodes": -1
+  "connected_sockets": 4,
+  "cluster_nodes": -1,
+  "nodes": [
+    {
+      "id": "3f9c2a1b7d4e6f80",
+      "name": "logbook-host",
+      "version": "0.3.0",
+      "started_at": "2026-09-21T08:00:00Z",
+      "seen_at": "2026-09-21T11:22:00Z",
+      "active_topics": 1,
+      "connected_clients": 3,
+      "connected_sockets": 4,
+      "alive": true,
+      "uptime": "3h22m0s",
+      "uptime_seconds": 12120
+    }
+  ]
 }
 ```
 
+Add `?topics=1` to also get `topic_list` and `active_topic_list`.
+
 `cluster_nodes` is `-1` when Redis clustering is disabled. In cluster mode it returns the number of Worker instances currently subscribed to the Redis Pub/Sub channel (including this one).
+
+`nodes` lists every cluster member (see [Cluster Mode](#cluster-mode)). In single-instance mode it contains only this worker. It is `null` when Redis is configured but unreachable.
 
 ---
 
@@ -175,15 +194,16 @@ redis_url: "redis://localhost:6379/2"  # DB 2 — avoid collision with other Red
 
 The Redis URL follows the standard `redis://[user:pass@]host:port/db` format. Leave it empty (or omit the key) for single-instance mode.
 
-### Status in cluster mode
+### Node presence
 
-```json
-{
-  "cluster_nodes": 3
-}
-```
+Every node writes a heartbeat entry into the Redis hash `wavelog:nodes` every 5 seconds, so any node can report the whole cluster in `nodes` of `/internal/status`. Wavelog therefore needs only **one** worker URL (`worker_url`: a load balancer, the k8s service, or any single node).
 
-`cluster_nodes` reflects the number of active subscribers on the Redis channel at query time. This is the authoritative live count — no separate discovery infrastructure needed.
+- The node name is the hostname (set `hostname:` in Docker Compose, otherwise you get the container ID; in Kubernetes it is the pod name).
+- A node that shuts down cleanly (SIGTERM, scale-down, rolling update) removes its entry immediately.
+- A node that crashes (SIGKILL, OOM, host loss) stays listed with `alive: false` for 15 minutes. Wavelog shows the cluster as degraded during that time, then the entry is forgotten.
+- A node that comes back under the same hostname replaces its dead entry at once.
+
+`cluster_nodes` is the number of active subscribers on the Redis channel at query time (live count, no grace window).
 
 ---
 
@@ -195,13 +215,10 @@ The Redis URL follows the standard `redis://[user:pass@]host:port/db` format. Le
 // Enable or disable the Worker integration entirely.
 $config['worker_enabled'] = true;
 
-// Internal URLs of wavelog_worker instances (PHP -> Worker, HTTP).
-// Single instance: one entry. Cluster: one entry per node.
-// PHP publishes to the first entry; the debug page shows status of all nodes.
-$config['worker_urls'] = [
-    'http://127.0.0.1:9001',
-    // 'http://127.0.0.1:9011',  // second node in cluster mode
-];
+// Internal URL of the Worker (PHP -> Worker, HTTP).
+// Single instance: the worker URL. Cluster: the load balancer / k8s service
+// URL; the nodes are discovered automatically (Worker 0.3.0 or newer).
+$config['worker_url'] = 'http://127.0.0.1:9001';
 
 // Shared secret — must match worker_secret in config.yaml.
 // Generate with: openssl rand -hex 32
@@ -212,14 +229,14 @@ $config['worker_secret'] = '<min. 32 characters>';
 $config['worker_timeout'] = 1.0;
 
 // Public WebSocket URL for the browser (Browser -> Worker).
-// May differ from worker_urls when behind a reverse proxy.
+// May differ from worker_url when behind a reverse proxy.
 // Format: ws://host:port or wss://host:port. Empty = no WebSocket in browser.
 $config['worker_client_url'] = 'wss://example.org:9000';
 ```
 
 `worker_enabled = false` disables all Worker calls without requiring URL/secret removal. Useful for temporarily disabling the feature without losing the configuration.
 
-PHP always publishes to the **first entry** in `worker_urls`. In cluster mode Redis handles the fan-out to other nodes — PHP does not need to know all node URLs for publishing. The Wavelog debug page queries all configured URLs individually to show a per-node status overview.
+PHP publishes to `worker_url`. In cluster mode Redis handles the fan-out to the other nodes, and the Wavelog debug page reads the cluster roster from the same URL. The older keys `worker_vip` and `worker_urls` (one entry per node) are still read when `worker_url` is empty, but are deprecated and will be removed in Wavelog 1.0.0. Workers older than 0.3.0 report no roster, so `worker_urls` with every node is still needed there for the per-node overview.
 
 ### Library: `application/libraries/Worker_publisher.php`
 
@@ -332,33 +349,35 @@ wavelog-worker:
 
 ### Docker Compose (cluster)
 
-Run multiple Worker containers sharing the same Redis instance. All containers use the same `config.yaml`; only the ports differ on the host side. The internal port 9001 is not published — PHP and the debug page reach nodes via their container names.
+Run multiple Worker containers sharing the same Redis instance. All containers use the same `config.yaml`; only the ports differ on the host side. The internal port 9001 is not published — PHP reaches the nodes via the Docker network. Set `hostname:` so the nodes show up with readable names instead of container IDs.
 
 ```yaml
 wavelog-worker-1:
   image: ghcr.io/wavelog/wavelog_worker:latest
+  hostname: worker-1
+  depends_on: [wavelog-cache]
   ports:
     - "9000:9000"   # browser WebSocket (VIP / load balancer target)
 
 wavelog-worker-2:
   image: ghcr.io/wavelog/wavelog_worker:latest
+  hostname: worker-2
+  depends_on: [wavelog-cache]
   # no host port needed — internal traffic only
 
 wavelog-worker-3:
   image: ghcr.io/wavelog/wavelog_worker:latest
+  hostname: worker-3
+  depends_on: [wavelog-cache]
 ```
 
-In `worker.php`, list all node URLs so the debug page can show individual node status:
+In `worker.php` one URL is enough. Point it at a load balancer in front of port 9001 if you have one, otherwise at any node:
 
 ```php
-$config['worker_urls'] = [
-    'http://wavelog-worker-1:9001',
-    'http://wavelog-worker-2:9001',
-    'http://wavelog-worker-3:9001',
-];
+$config['worker_url'] = 'http://wavelog-worker-1:9001';
 ```
 
-PHP publishes to the first URL. Redis distributes the event to the other nodes.
+PHP publishes to that URL, Redis distributes the event to the other nodes, and the debug page gets the whole roster from the same node.
 
 ### Binary + systemd
 

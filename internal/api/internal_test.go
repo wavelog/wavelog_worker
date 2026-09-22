@@ -9,7 +9,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/wavelog/wavelog_worker/internal/cluster"
 	"github.com/wavelog/wavelog_worker/internal/registry"
 	"github.com/wavelog/wavelog_worker/internal/sub"
 )
@@ -32,6 +34,10 @@ func (f *fakePublisher) Publish(topic string, payload json.RawMessage) {
 
 func (f *fakePublisher) ClusterNodes() int { return f.clusterNodes }
 
+func (f *fakePublisher) Nodes() []cluster.NodeInfo {
+	return []cluster.NodeInfo{{ID: "1", Name: "a", Alive: true}, {ID: "2", Name: "b", Alive: false}}
+}
+
 // fakeSubscriber is a no-op sub.Subscriber used to give a topic an active
 // subscriber in the status tests.
 type fakeSubscriber struct{}
@@ -42,7 +48,7 @@ func newTestServer(t *testing.T) (*Server, *fakePublisher, registry.Registry) {
 	t.Helper()
 	pub := &fakePublisher{clusterNodes: 3}
 	reg := registry.New()
-	s := NewServer(sub.NewManager(), pub, reg, secret, "v1.2.3")
+	s := NewServer(sub.NewManager(), pub, reg, secret, "v1.2.3", time.Now())
 	return s, pub, reg
 }
 
@@ -234,6 +240,9 @@ func TestStatus(t *testing.T) {
 	}
 	if resp.ClusterNodes != 3 {
 		t.Errorf("cluster nodes: got %d, want 3 (from fake)", resp.ClusterNodes)
+	}
+	if len(resp.Nodes) != 2 || resp.Nodes[0].Name != "a" || !resp.Nodes[0].Alive || resp.Nodes[1].Alive {
+		t.Errorf("nodes: got %+v, want a(alive) and b(dead) from fake", resp.Nodes)
 	}
 	// Without ?topics=1 the (potentially large) lists must be omitted.
 	if resp.TopicList != nil || resp.ActiveTopicList != nil {
