@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Worker are now completely stateless and can be scaled horizontally without the need to change anything in the Wavelog worker.php config. (by @HB9HIL)
+
 ## [0.2.5] - 2026-09-21
 
 ### Fixed
